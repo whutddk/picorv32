@@ -59,6 +59,10 @@
  * picorv32
  ***************************************************************/
 
+package Picorv32
+
+import chisel3._
+import chisel3.util._
 
 class Memory_Access_Bundle extends Bundle{
   	val valid = Output(Bool())
@@ -250,6 +254,77 @@ extends Module{
 	val timer = Reg(UInt(32.W))
 
 
+	// Internal PCPI Cores
+	val pcpi_mul_wr    = Wire(Bool())
+	val pcpi_mul_rd    = Wire(UInt(32.W))
+	val pcpi_mul_wait  = Wire(Bool())
+	val pcpi_mul_ready = Wire(Bool())
+
+	val pcpi_div_wr    = Wire(Bool())
+	val pcpi_div_rd    = Wire(UInt(32.W))
+	val pcpi_div_wait  = Wire(Bool())
+	val pcpi_div_ready = Wire(Bool())
+
+	val pcpi_int_wr    = Reg(Bool())
+	val pcpi_int_rd    = Reg(UInt(32.W))
+	val pcpi_int_wait  = Reg(Bool())
+	val pcpi_int_ready = Reg(Bool())
+
+	if(ENABLE_FAST_MUL){
+		val pcpi_fast_mul = Module(new Pcpi_fast_mul)
+
+		pcpi_fast_mul.io.valid := pcpi_valid
+		pcpi_fast_mul.io.insn  := pcpi_insn
+		pcpi_fast_mul.io.rs1   := pcpi_rs1
+		pcpi_fast_mul.io.rs2   := pcpi_rs2
+
+		pcpi_mul_wr    := pcpi_fast_mul.io.wr
+		pcpi_mul_rd    := pcpi_fast_mul.io.rd
+		pcpi_mul_wait  := pcpi_fast_mul.io.wait
+		pcpi_mul_ready := pcpi_fast_mul.io.ready
+
+	} else if(ENABLE_MUL){
+		require(false, "Require Failed! Didnot implement")
+		pcpi_mul_wr    := false.B
+		pcpi_mul_rd    := 0.U
+		pcpi_mul_wait  := false.B
+		pcpi_mul_ready := false.B
+	} else{
+		pcpi_mul_wr    := false.B
+		pcpi_mul_rd    := 0.U
+		pcpi_mul_wait  := false.B
+		pcpi_mul_ready := false.B
+	}
+
+
+
+
+	if (ENABLE_DIV) {
+		val pcpi_div = Module(new Pcpi_div)
+
+		pcpi_div.io.valid := pcpi_valid
+		pcpi_div.io.insn  := pcpi_insn
+		pcpi_div.io.rs1   := pcpi_rs1
+		pcpi_div.io.rs2   := pcpi_rs2
+		pcpi_div_wr     := pcpi_div.io.wr
+		pcpi_div_rd     := pcpi_div.io.rd
+		pcpi_div_wait   := pcpi_div.io.wait
+		pcpi_div_ready  := pcpi_div.io.ready
+	
+	} else {
+		pcpi_mul_wr    := false.B
+		pcpi_mul_rd    := 0.U
+		pcpi_mul_wait  := false.B
+		pcpi_mul_ready := false.B
+	}
+
+
+
+
+
+
+
+
 
 }
 
@@ -266,122 +341,55 @@ module picorv32 #(
 
 
 
-`ifndef PICORV32_REGS
-	reg [31:0] cpuregs [0:regfile_size-1];
+// `ifndef PICORV32_REGS
+// 	reg [31:0] cpuregs [0:regfile_size-1];
 
-	integer i;
-	initial begin
-		if (REGS_INIT_ZERO) begin
-			for (i = 0; i < regfile_size; i = i+1)
-				cpuregs[i] = 0;
-		end
-	end
-`endif
+// 	integer i;
+// 	initial begin
+// 		if (REGS_INIT_ZERO) begin
+// 			for (i = 0; i < regfile_size; i = i+1)
+// 				cpuregs[i] = 0;
+// 		end
+// 	end
+// `endif
 
-`ifdef DEBUGREGS
-	wire [31:0] dbg_reg_x0  = 0;
-	wire [31:0] dbg_reg_x1  = cpuregs[1];
-	wire [31:0] dbg_reg_x2  = cpuregs[2];
-	wire [31:0] dbg_reg_x3  = cpuregs[3];
-	wire [31:0] dbg_reg_x4  = cpuregs[4];
-	wire [31:0] dbg_reg_x5  = cpuregs[5];
-	wire [31:0] dbg_reg_x6  = cpuregs[6];
-	wire [31:0] dbg_reg_x7  = cpuregs[7];
-	wire [31:0] dbg_reg_x8  = cpuregs[8];
-	wire [31:0] dbg_reg_x9  = cpuregs[9];
-	wire [31:0] dbg_reg_x10 = cpuregs[10];
-	wire [31:0] dbg_reg_x11 = cpuregs[11];
-	wire [31:0] dbg_reg_x12 = cpuregs[12];
-	wire [31:0] dbg_reg_x13 = cpuregs[13];
-	wire [31:0] dbg_reg_x14 = cpuregs[14];
-	wire [31:0] dbg_reg_x15 = cpuregs[15];
-	wire [31:0] dbg_reg_x16 = cpuregs[16];
-	wire [31:0] dbg_reg_x17 = cpuregs[17];
-	wire [31:0] dbg_reg_x18 = cpuregs[18];
-	wire [31:0] dbg_reg_x19 = cpuregs[19];
-	wire [31:0] dbg_reg_x20 = cpuregs[20];
-	wire [31:0] dbg_reg_x21 = cpuregs[21];
-	wire [31:0] dbg_reg_x22 = cpuregs[22];
-	wire [31:0] dbg_reg_x23 = cpuregs[23];
-	wire [31:0] dbg_reg_x24 = cpuregs[24];
-	wire [31:0] dbg_reg_x25 = cpuregs[25];
-	wire [31:0] dbg_reg_x26 = cpuregs[26];
-	wire [31:0] dbg_reg_x27 = cpuregs[27];
-	wire [31:0] dbg_reg_x28 = cpuregs[28];
-	wire [31:0] dbg_reg_x29 = cpuregs[29];
-	wire [31:0] dbg_reg_x30 = cpuregs[30];
-	wire [31:0] dbg_reg_x31 = cpuregs[31];
-`endif
+// `ifdef DEBUGREGS
+// 	val dbg_reg_x0  = 0
+// 	val dbg_reg_x1  = cpuregs[1]
+// 	val dbg_reg_x2  = cpuregs[2]
+// 	val dbg_reg_x3  = cpuregs[3]
+// 	val dbg_reg_x4  = cpuregs[4]
+// 	val dbg_reg_x5  = cpuregs[5]
+// 	val dbg_reg_x6  = cpuregs[6]
+// 	val dbg_reg_x7  = cpuregs[7]
+// 	val dbg_reg_x8  = cpuregs[8]
+// 	val dbg_reg_x9  = cpuregs[9]
+// 	val dbg_reg_x10 = cpuregs[10]
+// 	val dbg_reg_x11 = cpuregs[11]
+// 	val dbg_reg_x12 = cpuregs[12]
+// 	val dbg_reg_x13 = cpuregs[13]
+// 	val dbg_reg_x14 = cpuregs[14]
+// 	val dbg_reg_x15 = cpuregs[15]
+// 	val dbg_reg_x16 = cpuregs[16]
+// 	val dbg_reg_x17 = cpuregs[17]
+// 	val dbg_reg_x18 = cpuregs[18]
+// 	val dbg_reg_x19 = cpuregs[19]
+// 	val dbg_reg_x20 = cpuregs[20]
+// 	val dbg_reg_x21 = cpuregs[21]
+// 	val dbg_reg_x22 = cpuregs[22]
+// 	val dbg_reg_x23 = cpuregs[23]
+// 	val dbg_reg_x24 = cpuregs[24]
+// 	val dbg_reg_x25 = cpuregs[25]
+// 	val dbg_reg_x26 = cpuregs[26]
+// 	val dbg_reg_x27 = cpuregs[27]
+// 	val dbg_reg_x28 = cpuregs[28]
+// 	val dbg_reg_x29 = cpuregs[29]
+// 	val dbg_reg_x30 = cpuregs[30]
+// 	val dbg_reg_x31 = cpuregs[31]
+// `endif
 
-	// Internal PCPI Cores
 
-	wire        pcpi_mul_wr;
-	wire [31:0] pcpi_mul_rd;
-	wire        pcpi_mul_wait;
-	wire        pcpi_mul_ready;
 
-	wire        pcpi_div_wr;
-	wire [31:0] pcpi_div_rd;
-	wire        pcpi_div_wait;
-	wire        pcpi_div_ready;
-
-	reg        pcpi_int_wr;
-	reg [31:0] pcpi_int_rd;
-	reg        pcpi_int_wait;
-	reg        pcpi_int_ready;
-
-	generate if (ENABLE_FAST_MUL) begin
-		picorv32_pcpi_fast_mul pcpi_mul (
-			.clk       (clk            ),
-			.resetn    (resetn         ),
-			.pcpi_valid(pcpi_valid     ),
-			.pcpi_insn (pcpi_insn      ),
-			.pcpi_rs1  (pcpi_rs1       ),
-			.pcpi_rs2  (pcpi_rs2       ),
-			.pcpi_wr   (pcpi_mul_wr    ),
-			.pcpi_rd   (pcpi_mul_rd    ),
-			.pcpi_wait (pcpi_mul_wait  ),
-			.pcpi_ready(pcpi_mul_ready )
-		);
-	end else if (ENABLE_MUL) begin
-		picorv32_pcpi_mul pcpi_mul (
-			.clk       (clk            ),
-			.resetn    (resetn         ),
-			.pcpi_valid(pcpi_valid     ),
-			.pcpi_insn (pcpi_insn      ),
-			.pcpi_rs1  (pcpi_rs1       ),
-			.pcpi_rs2  (pcpi_rs2       ),
-			.pcpi_wr   (pcpi_mul_wr    ),
-			.pcpi_rd   (pcpi_mul_rd    ),
-			.pcpi_wait (pcpi_mul_wait  ),
-			.pcpi_ready(pcpi_mul_ready )
-		);
-	end else begin
-		assign pcpi_mul_wr = 0;
-		assign pcpi_mul_rd = 32'bx;
-		assign pcpi_mul_wait = 0;
-		assign pcpi_mul_ready = 0;
-	end endgenerate
-
-	generate if (ENABLE_DIV) begin
-		picorv32_pcpi_div pcpi_div (
-			.clk       (clk            ),
-			.resetn    (resetn         ),
-			.pcpi_valid(pcpi_valid     ),
-			.pcpi_insn (pcpi_insn      ),
-			.pcpi_rs1  (pcpi_rs1       ),
-			.pcpi_rs2  (pcpi_rs2       ),
-			.pcpi_wr   (pcpi_div_wr    ),
-			.pcpi_rd   (pcpi_div_rd    ),
-			.pcpi_wait (pcpi_div_wait  ),
-			.pcpi_ready(pcpi_div_ready )
-		);
-	end else begin
-		assign pcpi_div_wr = 0;
-		assign pcpi_div_rd = 32'bx;
-		assign pcpi_div_wait = 0;
-		assign pcpi_div_ready = 0;
-	end endgenerate
 
 	always @* begin
 		pcpi_int_wr = 0;
@@ -2251,324 +2259,11 @@ module picorv32_regs (
 endmodule
 
 
-/***************************************************************
- * picorv32_pcpi_mul
- ***************************************************************/
-
-module picorv32_pcpi_mul #(
-	parameter STEPS_AT_ONCE = 1,
-	parameter CARRY_CHAIN = 4
-) (
-	input clk, resetn,
-
-	input             pcpi_valid,
-	input      [31:0] pcpi_insn,
-	input      [31:0] pcpi_rs1,
-	input      [31:0] pcpi_rs2,
-	output reg        pcpi_wr,
-	output reg [31:0] pcpi_rd,
-	output reg        pcpi_wait,
-	output reg        pcpi_ready
-);
-	reg instr_mul, instr_mulh, instr_mulhsu, instr_mulhu;
-	wire instr_any_mul = |{instr_mul, instr_mulh, instr_mulhsu, instr_mulhu};
-	wire instr_any_mulh = |{instr_mulh, instr_mulhsu, instr_mulhu};
-	wire instr_rs1_signed = |{instr_mulh, instr_mulhsu};
-	wire instr_rs2_signed = |{instr_mulh};
-
-	reg pcpi_wait_q;
-	wire mul_start = pcpi_wait && !pcpi_wait_q;
-
-	always @(posedge clk) begin
-		instr_mul <= 0;
-		instr_mulh <= 0;
-		instr_mulhsu <= 0;
-		instr_mulhu <= 0;
-
-		if (resetn && pcpi_valid && pcpi_insn[6:0] == 7'b0110011 && pcpi_insn[31:25] == 7'b0000001) begin
-			case (pcpi_insn[14:12])
-				3'b000: instr_mul <= 1;
-				3'b001: instr_mulh <= 1;
-				3'b010: instr_mulhsu <= 1;
-				3'b011: instr_mulhu <= 1;
-			endcase
-		end
-
-		pcpi_wait <= instr_any_mul;
-		pcpi_wait_q <= pcpi_wait;
-	end
-
-	reg [63:0] rs1, rs2, rd, rdx;
-	reg [63:0] next_rs1, next_rs2, this_rs2;
-	reg [63:0] next_rd, next_rdx, next_rdt;
-	reg [6:0] mul_counter;
-	reg mul_waiting;
-	reg mul_finish;
-	integer i, j;
-
-	// carry save accumulator
-	always @* begin
-		next_rd = rd;
-		next_rdx = rdx;
-		next_rs1 = rs1;
-		next_rs2 = rs2;
-
-		for (i = 0; i < STEPS_AT_ONCE; i=i+1) begin
-			this_rs2 = next_rs1[0] ? next_rs2 : 0;
-			if (CARRY_CHAIN == 0) begin
-				next_rdt = next_rd ^ next_rdx ^ this_rs2;
-				next_rdx = ((next_rd & next_rdx) | (next_rd & this_rs2) | (next_rdx & this_rs2)) << 1;
-				next_rd = next_rdt;
-			end else begin
-				next_rdt = 0;
-				for (j = 0; j < 64; j = j + CARRY_CHAIN)
-					{next_rdt[j+CARRY_CHAIN-1], next_rd[j +: CARRY_CHAIN]} =
-							next_rd[j +: CARRY_CHAIN] + next_rdx[j +: CARRY_CHAIN] + this_rs2[j +: CARRY_CHAIN];
-				next_rdx = next_rdt << 1;
-			end
-			next_rs1 = next_rs1 >> 1;
-			next_rs2 = next_rs2 << 1;
-		end
-	end
-
-	always @(posedge clk) begin
-		mul_finish <= 0;
-		if (!resetn) begin
-			mul_waiting <= 1;
-		end else
-		if (mul_waiting) begin
-			if (instr_rs1_signed)
-				rs1 <= $signed(pcpi_rs1);
-			else
-				rs1 <= $unsigned(pcpi_rs1);
-
-			if (instr_rs2_signed)
-				rs2 <= $signed(pcpi_rs2);
-			else
-				rs2 <= $unsigned(pcpi_rs2);
-
-			rd <= 0;
-			rdx <= 0;
-			mul_counter <= (instr_any_mulh ? 63 - STEPS_AT_ONCE : 31 - STEPS_AT_ONCE);
-			mul_waiting <= !mul_start;
-		end else begin
-			rd <= next_rd;
-			rdx <= next_rdx;
-			rs1 <= next_rs1;
-			rs2 <= next_rs2;
-
-			mul_counter <= mul_counter - STEPS_AT_ONCE;
-			if (mul_counter[6]) begin
-				mul_finish <= 1;
-				mul_waiting <= 1;
-			end
-		end
-	end
-
-	always @(posedge clk) begin
-		pcpi_wr <= 0;
-		pcpi_ready <= 0;
-		if (mul_finish && resetn) begin
-			pcpi_wr <= 1;
-			pcpi_ready <= 1;
-			pcpi_rd <= instr_any_mulh ? rd >> 32 : rd;
-		end
-	end
-endmodule
-
-module picorv32_pcpi_fast_mul #(
-	parameter EXTRA_MUL_FFS = 0,
-	parameter EXTRA_INSN_FFS = 0,
-	parameter MUL_CLKGATE = 0
-) (
-	input clk, resetn,
-
-	input             pcpi_valid,
-	input      [31:0] pcpi_insn,
-	input      [31:0] pcpi_rs1,
-	input      [31:0] pcpi_rs2,
-	output            pcpi_wr,
-	output     [31:0] pcpi_rd,
-	output            pcpi_wait,
-	output            pcpi_ready
-);
-	reg instr_mul, instr_mulh, instr_mulhsu, instr_mulhu;
-	wire instr_any_mul = |{instr_mul, instr_mulh, instr_mulhsu, instr_mulhu};
-	wire instr_any_mulh = |{instr_mulh, instr_mulhsu, instr_mulhu};
-	wire instr_rs1_signed = |{instr_mulh, instr_mulhsu};
-	wire instr_rs2_signed = |{instr_mulh};
-
-	reg shift_out;
-	reg [3:0] active;
-	reg [32:0] rs1, rs2, rs1_q, rs2_q;
-	reg [63:0] rd, rd_q;
-
-	wire pcpi_insn_valid = pcpi_valid && pcpi_insn[6:0] == 7'b0110011 && pcpi_insn[31:25] == 7'b0000001;
-	reg pcpi_insn_valid_q;
-
-	always @* begin
-		instr_mul = 0;
-		instr_mulh = 0;
-		instr_mulhsu = 0;
-		instr_mulhu = 0;
-
-		if (resetn && (EXTRA_INSN_FFS ? pcpi_insn_valid_q : pcpi_insn_valid)) begin
-			case (pcpi_insn[14:12])
-				3'b000: instr_mul = 1;
-				3'b001: instr_mulh = 1;
-				3'b010: instr_mulhsu = 1;
-				3'b011: instr_mulhu = 1;
-			endcase
-		end
-	end
-
-	always @(posedge clk) begin
-		pcpi_insn_valid_q <= pcpi_insn_valid;
-		if (!MUL_CLKGATE || active[0]) begin
-			rs1_q <= rs1;
-			rs2_q <= rs2;
-		end
-		if (!MUL_CLKGATE || active[1]) begin
-			rd <= $signed(EXTRA_MUL_FFS ? rs1_q : rs1) * $signed(EXTRA_MUL_FFS ? rs2_q : rs2);
-		end
-		if (!MUL_CLKGATE || active[2]) begin
-			rd_q <= rd;
-		end
-	end
-
-	always @(posedge clk) begin
-		if (instr_any_mul && !(EXTRA_MUL_FFS ? active[3:0] : active[1:0])) begin
-			if (instr_rs1_signed)
-				rs1 <= $signed(pcpi_rs1);
-			else
-				rs1 <= $unsigned(pcpi_rs1);
-
-			if (instr_rs2_signed)
-				rs2 <= $signed(pcpi_rs2);
-			else
-				rs2 <= $unsigned(pcpi_rs2);
-			active[0] <= 1;
-		end else begin
-			active[0] <= 0;
-		end
-
-		active[3:1] <= active;
-		shift_out <= instr_any_mulh;
-
-		if (!resetn)
-			active <= 0;
-	end
-
-	assign pcpi_wr = active[EXTRA_MUL_FFS ? 3 : 1];
-	assign pcpi_wait = 0;
-	assign pcpi_ready = active[EXTRA_MUL_FFS ? 3 : 1];
-`ifdef RISCV_FORMAL_ALTOPS
-	assign pcpi_rd =
-			instr_mul    ? (pcpi_rs1 + pcpi_rs2) ^ 32'h5876063e :
-			instr_mulh   ? (pcpi_rs1 + pcpi_rs2) ^ 32'hf6583fb7 :
-			instr_mulhsu ? (pcpi_rs1 - pcpi_rs2) ^ 32'hecfbe137 :
-			instr_mulhu  ? (pcpi_rs1 + pcpi_rs2) ^ 32'h949ce5e8 : 1'bx;
-`else
-	assign pcpi_rd = shift_out ? (EXTRA_MUL_FFS ? rd_q : rd) >> 32 : (EXTRA_MUL_FFS ? rd_q : rd);
-`endif
-endmodule
 
 
-/***************************************************************
- * picorv32_pcpi_div
- ***************************************************************/
 
-module picorv32_pcpi_div (
-	input clk, resetn,
 
-	input             pcpi_valid,
-	input      [31:0] pcpi_insn,
-	input      [31:0] pcpi_rs1,
-	input      [31:0] pcpi_rs2,
-	output reg        pcpi_wr,
-	output reg [31:0] pcpi_rd,
-	output reg        pcpi_wait,
-	output reg        pcpi_ready
-);
-	reg instr_div, instr_divu, instr_rem, instr_remu;
-	wire instr_any_div_rem = |{instr_div, instr_divu, instr_rem, instr_remu};
 
-	reg pcpi_wait_q;
-	wire start = pcpi_wait && !pcpi_wait_q;
-
-	always @(posedge clk) begin
-		instr_div <= 0;
-		instr_divu <= 0;
-		instr_rem <= 0;
-		instr_remu <= 0;
-
-		if (resetn && pcpi_valid && !pcpi_ready && pcpi_insn[6:0] == 7'b0110011 && pcpi_insn[31:25] == 7'b0000001) begin
-			case (pcpi_insn[14:12])
-				3'b100: instr_div <= 1;
-				3'b101: instr_divu <= 1;
-				3'b110: instr_rem <= 1;
-				3'b111: instr_remu <= 1;
-			endcase
-		end
-
-		pcpi_wait <= instr_any_div_rem && resetn;
-		pcpi_wait_q <= pcpi_wait && resetn;
-	end
-
-	reg [31:0] dividend;
-	reg [62:0] divisor;
-	reg [31:0] quotient;
-	reg [31:0] quotient_msk;
-	reg running;
-	reg outsign;
-
-	always @(posedge clk) begin
-		pcpi_ready <= 0;
-		pcpi_wr <= 0;
-		pcpi_rd <= 'bx;
-
-		if (!resetn) begin
-			running <= 0;
-		end else
-		if (start) begin
-			running <= 1;
-			dividend <= (instr_div || instr_rem) && pcpi_rs1[31] ? -pcpi_rs1 : pcpi_rs1;
-			divisor <= ((instr_div || instr_rem) && pcpi_rs2[31] ? -pcpi_rs2 : pcpi_rs2) << 31;
-			outsign <= (instr_div && (pcpi_rs1[31] != pcpi_rs2[31]) && |pcpi_rs2) || (instr_rem && pcpi_rs1[31]);
-			quotient <= 0;
-			quotient_msk <= 1 << 31;
-		end else
-		if (!quotient_msk && running) begin
-			running <= 0;
-			pcpi_ready <= 1;
-			pcpi_wr <= 1;
-`ifdef RISCV_FORMAL_ALTOPS
-			case (1)
-				instr_div:  pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h7f8529ec;
-				instr_divu: pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h10e8fd70;
-				instr_rem:  pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h8da68fa5;
-				instr_remu: pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h3138d0e1;
-			endcase
-`else
-			if (instr_div || instr_divu)
-				pcpi_rd <= outsign ? -quotient : quotient;
-			else
-				pcpi_rd <= outsign ? -dividend : dividend;
-`endif
-		end else begin
-			if (divisor <= dividend) begin
-				dividend <= dividend - divisor;
-				quotient <= quotient | quotient_msk;
-			end
-			divisor <= divisor >> 1;
-`ifdef RISCV_FORMAL_ALTOPS
-			quotient_msk <= quotient_msk >> 5;
-`else
-			quotient_msk <= quotient_msk >> 1;
-`endif
-		end
-	end
-endmodule
 
 
 /***************************************************************

@@ -1,0 +1,157 @@
+/*
+ *  PicoRV32 -- A Small RISC-V (RV32I) Processor Core
+ *
+ *  Copyright (C) 2015  Claire Xenia Wolf <claire@yosyshq.com>
+ *
+ *  Permission to use, copy, modify, and/or distribute this software for any
+ *  purpose with or without fee is hereby granted, provided that the above
+ *  copyright notice and this permission notice appear in all copies.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ *  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ *  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ *  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ *  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ *  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ *  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ *
+ */
+
+package Picorv32
+
+import chisel3._
+import chisel3.util._
+
+
+
+/***************************************************************
+ * picorv32_pcpi_mul
+ ***************************************************************/
+
+
+
+class Pcpi_mul(
+	STEPS_AT_ONCE: Int = 1,
+	CARRY_CHAIN: Int = 4
+)  extends Module{
+  val io: PCPI_Access_Bundle = IO(new PCPI_Access_Bundle)
+
+
+  val instr_mul    = RegNext( io.valid & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U & io.insn(14,12) === "b000".U, false.B )
+  val instr_mulh   = RegNext( io.valid & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U & io.insn(14,12) === "b001".U, false.B )
+  val instr_mulhsu = RegNext( io.valid & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U & io.insn(14,12) === "b010".U, false.B )
+  val instr_mulhu  = RegNext( io.valid & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U & io.insn(14,12) === "b011".U, false.B )
+
+	val instr_any_mul = instr_mul | instr_mulh | instr_mulhsu | instr_mulhu
+	val instr_any_mulh = instr_mulh | instr_mulhsu | instr_mulhu
+	val instr_rs1_signed = instr_mulh | instr_mulhsu
+	val instr_rs2_signed = instr_mulh
+
+	val pcpi_wr = Reg(Bool());     io.wr := pcpi_wr
+	val pcpi_rd = Reg(UInt(32.W)); io.rd := pcpi_rd
+	val pcpi_wait = RegNext(instr_any_mul);   io.wait := pcpi_wait
+	val pcpi_ready = Reg(Bool());  io.ready := pcpi_ready
+
+	val pcpi_wait_q = RegNext(pcpi_wait)
+	val mul_start = pcpi_wait & ~pcpi_wait_q
+  
+
+	reg [63:0] rs1, rs2, rd, rdx;
+	reg [63:0] next_rs1, next_rs2, this_rs2;
+	reg [63:0] next_rd, next_rdx, next_rdt;
+	reg [6:0] mul_counter;
+	reg mul_waiting;
+	reg mul_finish;
+	integer i, j;
+
+	// carry save accumulator
+	always @* begin
+		next_rd = rd;
+		next_rdx = rdx;
+		next_rs1 = rs1;
+		next_rs2 = rs2;
+
+		for ( i <- 0 until STEPS_AT_ONCE ) {
+
+			this_rs2 = Mux(next_rs1.extract(0), next_rs2, 0)
+
+			if (CARRY_CHAIN == 0) {
+				next_rdt = next_rd ^ next_rdx ^ this_rs2
+				next_rdx = ((next_rd & next_rdx) | (next_rd & this_rs2) | (next_rdx & this_rs2)) << 1
+				next_rd = next_rdt
+      } else{
+				next_rdt = 0
+				for ( j <- 0 until 64 by CARRY_CHAIN ){
+					{next_rdt[j+CARRY_CHAIN-1], next_rd[j +: CARRY_CHAIN]} = next_rd[j +: CARRY_CHAIN] + next_rdx[j +: CARRY_CHAIN] + this_rs2[j +: CARRY_CHAIN]
+        }
+
+				next_rdx = next_rdt << 1
+      }
+
+			next_rs1 = next_rs1 >> 1
+			next_rs2 = next_rs2 << 1
+    }
+
+
+
+}
+
+
+module picorv32_pcpi_mul #(
+	parameter STEPS_AT_ONCE = 1,
+	parameter CARRY_CHAIN = 4
+) (
+
+
+
+
+
+
+
+
+
+	always @(posedge clk) begin
+		mul_finish <= 0;
+		if (!resetn) begin
+			mul_waiting <= 1;
+		end else
+		if (mul_waiting) begin
+			if (instr_rs1_signed)
+				rs1 <= $signed(pcpi_rs1);
+			else
+				rs1 <= $unsigned(pcpi_rs1);
+
+			if (instr_rs2_signed)
+				rs2 <= $signed(pcpi_rs2);
+			else
+				rs2 <= $unsigned(pcpi_rs2);
+
+			rd <= 0;
+			rdx <= 0;
+			mul_counter <= (instr_any_mulh ? 63 - STEPS_AT_ONCE : 31 - STEPS_AT_ONCE);
+			mul_waiting <= !mul_start;
+		end else begin
+			rd <= next_rd;
+			rdx <= next_rdx;
+			rs1 <= next_rs1;
+			rs2 <= next_rs2;
+
+			mul_counter <= mul_counter - STEPS_AT_ONCE;
+			if (mul_counter[6]) begin
+				mul_finish <= 1;
+				mul_waiting <= 1;
+			end
+		end
+	end
+
+	always @(posedge clk) begin
+		pcpi_wr <= 0;
+		pcpi_ready <= 0;
+		if (mul_finish && resetn) begin
+			pcpi_wr <= 1;
+			pcpi_ready <= 1;
+			pcpi_rd <= instr_any_mulh ? rd >> 32 : rd;
+		end
+	end
+endmodule
+
