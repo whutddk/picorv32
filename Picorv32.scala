@@ -65,7 +65,7 @@ import chisel3._
 import chisel3.util._
 
 class Memory_Access_Bundle extends Bundle{
-  	val valid = Output(Bool())
+  val valid = Output(Bool())
 	val ready = Input(Bool())
 
 	val isInstr = Output(Bool())
@@ -183,14 +183,13 @@ extends Module{
   val io: Picorv32IO = IO(new Picorv32IO)
 
 	val trap = Reg(Bool()); io.trap := trap
-	val mem_valid = Reg(Bool()); io.mem.valid     := mem_valid
+	val mem_valid = RegInit(false.B); io.mem.valid     := mem_valid
 	val mem_instr = Reg(Bool()); io.mem.isInstr   := mem_instr
 	val mem_addr  = Reg(UInt(32.W)); io.mem.addr  := mem_addr
 	val mem_wdata = Reg(UInt(32.W)); io.mem.wdata := mem_wdata
 	val mem_wstrb = Reg(UInt(4.W));  io.mem.wstrb := mem_wstrb
 
-	val mem_la_wdata = Reg(UInt(32.W)); io.mem_la.wdata := mem_la_wdata
-	val mem_la_wstrb = Reg(UInt(4.W));  io.mem_la.wstrb := mem_la_wstrb
+
 
 	val pcpi_valid = Reg(Bool()); io.pcpi.valid := pcpi_valid
 	val pcpi_insn = Reg(UInt(32.W)); io.pcpi.insn := pcpi_insn
@@ -229,18 +228,18 @@ extends Module{
   val reg_out = Reg(UInt(32.W))
   val reg_sh = Reg(UInt(5.W))
 
-	val next_insn_opcode = Reg(UInt(32.W))
-	val dbg_insn_opcode  = Reg(UInt(32.W))
-	val dbg_insn_addr    = Reg(UInt(32.W))
+
+
+
 
 	val dbg_mem_valid = mem_valid
 	val dbg_mem_instr = mem_instr
-	val dbg_mem_ready = mem_ready
+	val dbg_mem_ready = io.mem.ready
 
 	val dbg_mem_addr  = mem_addr
 	val dbg_mem_wdata = mem_wdata
 	val dbg_mem_wstrb = mem_wstrb
-	val dbg_mem_rdata = mem_rdata
+	val dbg_mem_rdata = io.mem.rdata
 
 	io.pcpi_rs1 := reg_op1
 	io.pcpi_rs2 := reg_op2
@@ -265,10 +264,7 @@ extends Module{
 	val pcpi_div_wait  = Wire(Bool())
 	val pcpi_div_ready = Wire(Bool())
 
-	val pcpi_int_wr    = Reg(Bool())
-	val pcpi_int_rd    = Reg(UInt(32.W))
-	val pcpi_int_wait  = Reg(Bool())
-	val pcpi_int_ready = Reg(Bool())
+
 
 	if(ENABLE_FAST_MUL){
 		val pcpi_fast_mul = Module(new Pcpi_fast_mul)
@@ -312,13 +308,29 @@ extends Module{
 		pcpi_div_ready  := pcpi_div.io.ready
 	
 	} else {
-		pcpi_mul_wr    := false.B
-		pcpi_mul_rd    := 0.U
-		pcpi_mul_wait  := false.B
-		pcpi_mul_ready := false.B
+		pcpi_div_wr    := false.B
+		pcpi_div_rd    := 0.U
+		pcpi_div_wait  := false.B
+		pcpi_div_ready := false.B
 	}
 
 
+	val pcpi_int_wr =
+    Mux1H(Seq() ++
+      if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_wr) } ++
+      if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_wr) } ++
+      if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_wr)}
+    )
+
+	val pcpi_int_rd =
+    Mux1H(Seq() ++ 
+      if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_rd) } ++
+      if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_rd) } ++
+      if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_rd)}
+    )
+
+	val pcpi_int_wait  = false.B | (if(ENABLE_PCPI)  {pcpi_wait }) | (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_wait }) | (if(ENABLE_DIV) {pcpi_div_wait })
+	val pcpi_int_ready = false.B | (if(ENABLE_PCPI)  {pcpi_ready}) | (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_ready}) | (if(ENABLE_DIV) {pcpi_div_ready})
 
 
 
@@ -326,784 +338,708 @@ extends Module{
 
 
 
-}
 
 
 
 
-module picorv32 #(
-
-) (
-
-
-);
 
 
 
 
-// `ifndef PICORV32_REGS
-// 	reg [31:0] cpuregs [0:regfile_size-1];
-
-// 	integer i;
-// 	initial begin
-// 		if (REGS_INIT_ZERO) begin
-// 			for (i = 0; i < regfile_size; i = i+1)
-// 				cpuregs[i] = 0;
-// 		end
-// 	end
-// `endif
-
-// `ifdef DEBUGREGS
-// 	val dbg_reg_x0  = 0
-// 	val dbg_reg_x1  = cpuregs[1]
-// 	val dbg_reg_x2  = cpuregs[2]
-// 	val dbg_reg_x3  = cpuregs[3]
-// 	val dbg_reg_x4  = cpuregs[4]
-// 	val dbg_reg_x5  = cpuregs[5]
-// 	val dbg_reg_x6  = cpuregs[6]
-// 	val dbg_reg_x7  = cpuregs[7]
-// 	val dbg_reg_x8  = cpuregs[8]
-// 	val dbg_reg_x9  = cpuregs[9]
-// 	val dbg_reg_x10 = cpuregs[10]
-// 	val dbg_reg_x11 = cpuregs[11]
-// 	val dbg_reg_x12 = cpuregs[12]
-// 	val dbg_reg_x13 = cpuregs[13]
-// 	val dbg_reg_x14 = cpuregs[14]
-// 	val dbg_reg_x15 = cpuregs[15]
-// 	val dbg_reg_x16 = cpuregs[16]
-// 	val dbg_reg_x17 = cpuregs[17]
-// 	val dbg_reg_x18 = cpuregs[18]
-// 	val dbg_reg_x19 = cpuregs[19]
-// 	val dbg_reg_x20 = cpuregs[20]
-// 	val dbg_reg_x21 = cpuregs[21]
-// 	val dbg_reg_x22 = cpuregs[22]
-// 	val dbg_reg_x23 = cpuregs[23]
-// 	val dbg_reg_x24 = cpuregs[24]
-// 	val dbg_reg_x25 = cpuregs[25]
-// 	val dbg_reg_x26 = cpuregs[26]
-// 	val dbg_reg_x27 = cpuregs[27]
-// 	val dbg_reg_x28 = cpuregs[28]
-// 	val dbg_reg_x29 = cpuregs[29]
-// 	val dbg_reg_x30 = cpuregs[30]
-// 	val dbg_reg_x31 = cpuregs[31]
-// `endif
-
-
-
-
-	always @* begin
-		pcpi_int_wr = 0;
-		pcpi_int_rd = 32'bx;
-		pcpi_int_wait  = |{ENABLE_PCPI && pcpi_wait,  (ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_wait,  ENABLE_DIV && pcpi_div_wait};
-		pcpi_int_ready = |{ENABLE_PCPI && pcpi_ready, (ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_ready, ENABLE_DIV && pcpi_div_ready};
-
-		(* parallel_case *)
-		case (1'b1)
-			ENABLE_PCPI && pcpi_ready: begin
-				pcpi_int_wr = ENABLE_PCPI ? pcpi_wr : 0;
-				pcpi_int_rd = ENABLE_PCPI ? pcpi_rd : 0;
-			end
-			(ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_ready: begin
-				pcpi_int_wr = pcpi_mul_wr;
-				pcpi_int_rd = pcpi_mul_rd;
-			end
-			ENABLE_DIV && pcpi_div_ready: begin
-				pcpi_int_wr = pcpi_div_wr;
-				pcpi_int_rd = pcpi_div_rd;
-			end
-		endcase
-	end
 
 
 	// Memory Interface
+  
+	val mem_wordsize = Reg(UInt(2.W))
 
-	reg [1:0] mem_state;
-	reg [1:0] mem_wordsize;
-	reg [31:0] mem_rdata_word;
-	reg [31:0] mem_rdata_q;
+
+	val mem_la_wdata = 
+    Mux1H(Seq(
+      ( mem_wordsize === 0.U ) -> reg_op2,
+      ( mem_wordsize === 1.U ) -> Fill(2, reg_op2(15,0)),
+      ( mem_wordsize === 2.U ) -> Fill(4, reg_op2( 7,0)),
+    ))
+
+	val mem_la_wstrb = 
+    Mux1H(Seq(
+      ( mem_wordsize === 0.U ) -> "b1111".U,
+      ( mem_wordsize === 1.U ) -> Mux( reg_op1.extract(1), "b1100".U, "b0011".U),
+      ( mem_wordsize === 2.U ) -> 1.U << reg_op1(1,0),
+    ))
+
+	val mem_rdata_word = 
+    Mux1H(Seq(
+      ( mem_wordsize === 0.U ) -> io.mem.rdata,
+      ( mem_wordsize === 1.U ) -> Mux( reg_op1.extract(1), io.mem.rdata(31,16), io.mem.rdata(15, 0) )
+      ( mem_wordsize === 2.U ) ->
+        Mux1H(Seq(
+          (reg_op1(1,0) === "b00".U) -> io.mem.rdata( 7, 0),
+          (reg_op1(1,0) === "b01".U) -> io.mem.rdata(15, 8),
+          (reg_op1(1,0) === "b10".U) -> io.mem.rdata(23,16),
+          (reg_op1(1,0) === "b11".U) -> io.mem.rdata(31,24),
+        ))
+    ))
+
+  io.mem_la.wdata := mem_la_wdata
+  io.mem_la.wstrb := mem_la_wstrb
+
+
+
+
+
+	val mem_state = RegInit(0.U(2.W))
+
+
+
 	reg mem_do_prefetch;
 	reg mem_do_rinst;
 	reg mem_do_rdata;
 	reg mem_do_wdata;
 
-	wire mem_xfer;
-	reg mem_la_secondword, mem_la_firstword_reg, last_mem_valid;
-	wire mem_la_firstword = COMPRESSED_ISA && (mem_do_prefetch || mem_do_rinst) && next_pc[1] && !mem_la_secondword;
-	wire mem_la_firstword_xfer = COMPRESSED_ISA && mem_xfer && (!last_mem_valid ? mem_la_firstword : mem_la_firstword_reg);
+	val mem_xfer = Wire(Bool())
 
-	reg prefetched_high_word;
+	val mem_la_secondword = RegInit(false.B)
+
+	val mem_la_firstword =
+    if(COMPRESSED_ISA) {(mem_do_prefetch | mem_do_rinst) & next_pc.extract(1) & ~mem_la_secondword} else {false.B}
+
+	val mem_la_firstword_xfer =
+    if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg)} else {false.B}
+
+  val last_mem_valid = RegNext(mem_valid & ~io.mem.ready, false.B)
+  val mem_la_firstword_reg = RegEnable(mem_la_firstword, false.B, ~last_mem_valid)
+
+
+
+
+
+
+	val prefetched_high_word = RegInit(false.B)
 	reg clear_prefetched_high_word;
 	reg [15:0] mem_16bit_buffer;
+	reg [31:0] mem_rdata_q;
 
-	wire [31:0] mem_rdata_latched_noshuffle;
-	wire [31:0] mem_rdata_latched;
+	val mem_rdata_latched = Wire(UInt(32.W))
 
-	wire mem_la_use_prefetched_high_word = COMPRESSED_ISA && mem_la_firstword && prefetched_high_word && !clear_prefetched_high_word;
-	assign mem_xfer = (mem_valid && mem_ready) || (mem_la_use_prefetched_high_word && mem_do_rinst);
+	val mem_la_use_prefetched_high_word =
+    if(COMPRESSED_ISA) {mem_la_firstword & prefetched_high_word & ~clear_prefetched_high_word} else {false.B}
 
-	wire mem_busy = |{mem_do_prefetch, mem_do_rinst, mem_do_rdata, mem_do_wdata};
-	wire mem_done = resetn && ((mem_xfer && |mem_state && (mem_do_rinst || mem_do_rdata || mem_do_wdata)) || (&mem_state && mem_do_rinst)) &&
-			(!mem_la_firstword || (~&mem_rdata_latched[1:0] && mem_xfer));
+	mem_xfer := (mem_valid & io.mem.ready) | (mem_la_use_prefetched_high_word & mem_do_rinst)
 
-	assign mem_la_write = resetn && !mem_state && mem_do_wdata;
-	assign mem_la_read = resetn && ((!mem_la_use_prefetched_high_word && !mem_state && (mem_do_rinst || mem_do_prefetch || mem_do_rdata)) ||
-			(COMPRESSED_ISA && mem_xfer && (!last_mem_valid ? mem_la_firstword : mem_la_firstword_reg) && !mem_la_secondword && &mem_rdata_latched[1:0]));
-	assign mem_la_addr = (mem_do_prefetch || mem_do_rinst) ? {next_pc[31:2] + mem_la_firstword_xfer, 2'b00} : {reg_op1[31:2], 2'b00};
+	val mem_busy = mem_do_prefetch | mem_do_rinst | mem_do_rdata | mem_do_wdata
 
-	assign mem_rdata_latched_noshuffle = (mem_xfer || LATCHED_MEM_RDATA) ? mem_rdata : mem_rdata_q;
+	val mem_done = ~reset & ((mem_xfer & mem_state.orR & (mem_do_rinst | mem_do_rdata | mem_do_wdata)) | (mem_state.andR & mem_do_rinst)) &
+			(~mem_la_firstword | (~mem_rdata_latched(1,0).andR & mem_xfer))
 
-	assign mem_rdata_latched = COMPRESSED_ISA && mem_la_use_prefetched_high_word ? {16'bx, mem_16bit_buffer} :
-			COMPRESSED_ISA && mem_la_secondword ? {mem_rdata_latched_noshuffle[15:0], mem_16bit_buffer} :
-			COMPRESSED_ISA && mem_la_firstword ? {16'bx, mem_rdata_latched_noshuffle[31:16]} : mem_rdata_latched_noshuffle;
+	io.mem_la.write := ~reset & (mem_state === 0.U) & mem_do_wdata
+	io.mem_la.read  := ~reset & ((~mem_la_use_prefetched_high_word & (mem_state === 0.U) & (mem_do_rinst | mem_do_prefetch | mem_do_rdata)) |
+			(if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg) & ~mem_la_secondword & mem_rdata_latched(1,0).andR} else {false.B}))
 
-	always @(posedge clk) begin
-		if (!resetn) begin
-			mem_la_firstword_reg <= 0;
-			last_mem_valid <= 0;
-		end else begin
-			if (!last_mem_valid)
-				mem_la_firstword_reg <= mem_la_firstword;
-			last_mem_valid <= mem_valid && !mem_ready;
-		end
-	end
+	io.mem_la.addr := Mux( mem_do_prefetch | mem_do_rinst, Cat(next_pc(31,2) + mem_la_firstword_xfer, 0.U(2.W)), Cat(reg_op1(31,2), 0.U(2.W)))
 
-	always @* begin
-		(* full_case *)
-		case (mem_wordsize)
-			0: begin
-				mem_la_wdata = reg_op2;
-				mem_la_wstrb = 4'b1111;
-				mem_rdata_word = mem_rdata;
-			end
-			1: begin
-				mem_la_wdata = {2{reg_op2[15:0]}};
-				mem_la_wstrb = reg_op1[1] ? 4'b1100 : 4'b0011;
-				case (reg_op1[1])
-					1'b0: mem_rdata_word = {16'b0, mem_rdata[15: 0]};
-					1'b1: mem_rdata_word = {16'b0, mem_rdata[31:16]};
-				endcase
-			end
-			2: begin
-				mem_la_wdata = {4{reg_op2[7:0]}};
-				mem_la_wstrb = 4'b0001 << reg_op1[1:0];
-				case (reg_op1[1:0])
-					2'b00: mem_rdata_word = {24'b0, mem_rdata[ 7: 0]};
-					2'b01: mem_rdata_word = {24'b0, mem_rdata[15: 8]};
-					2'b10: mem_rdata_word = {24'b0, mem_rdata[23:16]};
-					2'b11: mem_rdata_word = {24'b0, mem_rdata[31:24]};
-				endcase
-			end
-		endcase
-	end
+	val mem_rdata_latched_noshuffle =
+    if( LATCHED_MEM_RDATA ){ io.mem.rdata } else { Mux(mem_xfer, io.mem.rdata, mem_rdata_q) }
+    
+	mem_rdata_latched :=
+    if( COMPRESSED_ISA ){
+      Mux(mem_la_use_prefetched_high_word, mem_16bit_buffer,
+			  Mux(mem_la_secondword, Cat(mem_rdata_latched_noshuffle(15,0), mem_16bit_buffer),
+			    Mux(mem_la_firstword, mem_rdata_latched_noshuffle(31,16), mem_rdata_latched_noshuffle)))
+    } else {
+      mem_rdata_latched_noshuffle
+    }
 
-	always @(posedge clk) begin
-		if (mem_xfer) begin
-			mem_rdata_q <= COMPRESSED_ISA ? mem_rdata_latched : mem_rdata;
-			next_insn_opcode <= COMPRESSED_ISA ? mem_rdata_latched : mem_rdata;
-		end
 
-		if (COMPRESSED_ISA && mem_done && (mem_do_prefetch || mem_do_rinst)) begin
-			case (mem_rdata_latched[1:0])
-				2'b00: begin // Quadrant 0
-					case (mem_rdata_latched[15:13])
-						3'b000: begin // C.ADDI4SPN
-							mem_rdata_q[14:12] <= 3'b000;
-							mem_rdata_q[31:20] <= {2'b0, mem_rdata_latched[10:7], mem_rdata_latched[12:11], mem_rdata_latched[5], mem_rdata_latched[6], 2'b00};
-						end
-						3'b010: begin // C.LW
-							mem_rdata_q[31:20] <= {5'b0, mem_rdata_latched[5], mem_rdata_latched[12:10], mem_rdata_latched[6], 2'b00};
-							mem_rdata_q[14:12] <= 3'b 010;
-						end
-						3'b 110: begin // C.SW
-							{mem_rdata_q[31:25], mem_rdata_q[11:7]} <= {5'b0, mem_rdata_latched[5], mem_rdata_latched[12:10], mem_rdata_latched[6], 2'b00};
-							mem_rdata_q[14:12] <= 3'b 010;
-						end
-					endcase
-				end
-				2'b01: begin // Quadrant 1
-					case (mem_rdata_latched[15:13])
-						3'b 000: begin // C.ADDI
-							mem_rdata_q[14:12] <= 3'b000;
-							mem_rdata_q[31:20] <= $signed({mem_rdata_latched[12], mem_rdata_latched[6:2]});
-						end
-						3'b 010: begin // C.LI
-							mem_rdata_q[14:12] <= 3'b000;
-							mem_rdata_q[31:20] <= $signed({mem_rdata_latched[12], mem_rdata_latched[6:2]});
-						end
-						3'b 011: begin
-							if (mem_rdata_latched[11:7] == 2) begin // C.ADDI16SP
-								mem_rdata_q[14:12] <= 3'b000;
-								mem_rdata_q[31:20] <= $signed({mem_rdata_latched[12], mem_rdata_latched[4:3],
-										mem_rdata_latched[5], mem_rdata_latched[2], mem_rdata_latched[6], 4'b 0000});
-							end else begin // C.LUI
-								mem_rdata_q[31:12] <= $signed({mem_rdata_latched[12], mem_rdata_latched[6:2]});
-							end
-						end
-						3'b100: begin
-							if (mem_rdata_latched[11:10] == 2'b00) begin // C.SRLI
-								mem_rdata_q[31:25] <= 7'b0000000;
-								mem_rdata_q[14:12] <= 3'b 101;
-							end
-							if (mem_rdata_latched[11:10] == 2'b01) begin // C.SRAI
-								mem_rdata_q[31:25] <= 7'b0100000;
-								mem_rdata_q[14:12] <= 3'b 101;
-							end
-							if (mem_rdata_latched[11:10] == 2'b10) begin // C.ANDI
-								mem_rdata_q[14:12] <= 3'b111;
-								mem_rdata_q[31:20] <= $signed({mem_rdata_latched[12], mem_rdata_latched[6:2]});
-							end
-							if (mem_rdata_latched[12:10] == 3'b011) begin // C.SUB, C.XOR, C.OR, C.AND
-								if (mem_rdata_latched[6:5] == 2'b00) mem_rdata_q[14:12] <= 3'b000;
-								if (mem_rdata_latched[6:5] == 2'b01) mem_rdata_q[14:12] <= 3'b100;
-								if (mem_rdata_latched[6:5] == 2'b10) mem_rdata_q[14:12] <= 3'b110;
-								if (mem_rdata_latched[6:5] == 2'b11) mem_rdata_q[14:12] <= 3'b111;
-								mem_rdata_q[31:25] <= mem_rdata_latched[6:5] == 2'b00 ? 7'b0100000 : 7'b0000000;
-							end
-						end
-						3'b 110: begin // C.BEQZ
-							mem_rdata_q[14:12] <= 3'b000;
-							{ mem_rdata_q[31], mem_rdata_q[7], mem_rdata_q[30:25], mem_rdata_q[11:8] } <=
-									$signed({mem_rdata_latched[12], mem_rdata_latched[6:5], mem_rdata_latched[2],
-											mem_rdata_latched[11:10], mem_rdata_latched[4:3]});
-						end
-						3'b 111: begin // C.BNEZ
-							mem_rdata_q[14:12] <= 3'b001;
-							{ mem_rdata_q[31], mem_rdata_q[7], mem_rdata_q[30:25], mem_rdata_q[11:8] } <=
-									$signed({mem_rdata_latched[12], mem_rdata_latched[6:5], mem_rdata_latched[2],
-											mem_rdata_latched[11:10], mem_rdata_latched[4:3]});
-						end
-					endcase
-				end
-				2'b10: begin // Quadrant 2
-					case (mem_rdata_latched[15:13])
-						3'b000: begin // C.SLLI
-							mem_rdata_q[31:25] <= 7'b0000000;
-							mem_rdata_q[14:12] <= 3'b 001;
-						end
-						3'b010: begin // C.LWSP
-							mem_rdata_q[31:20] <= {4'b0, mem_rdata_latched[3:2], mem_rdata_latched[12], mem_rdata_latched[6:4], 2'b00};
-							mem_rdata_q[14:12] <= 3'b 010;
-						end
-						3'b100: begin
-							if (mem_rdata_latched[12] == 0 && mem_rdata_latched[6:2] == 0) begin // C.JR
-								mem_rdata_q[14:12] <= 3'b000;
-								mem_rdata_q[31:20] <= 12'b0;
-							end
-							if (mem_rdata_latched[12] == 0 && mem_rdata_latched[6:2] != 0) begin // C.MV
-								mem_rdata_q[14:12] <= 3'b000;
-								mem_rdata_q[31:25] <= 7'b0000000;
-							end
-							if (mem_rdata_latched[12] != 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JALR
-								mem_rdata_q[14:12] <= 3'b000;
-								mem_rdata_q[31:20] <= 12'b0;
-							end
-							if (mem_rdata_latched[12] != 0 && mem_rdata_latched[6:2] != 0) begin // C.ADD
-								mem_rdata_q[14:12] <= 3'b000;
-								mem_rdata_q[31:25] <= 7'b0000000;
-							end
-						end
-						3'b110: begin // C.SWSP
-							{mem_rdata_q[31:25], mem_rdata_q[11:7]} <= {4'b0, mem_rdata_latched[8:7], mem_rdata_latched[12:9], 2'b00};
-							mem_rdata_q[14:12] <= 3'b 010;
-						end
-					endcase
-				end
-			endcase
-		end
-	end
 
-	always @(posedge clk) begin
-		if (resetn && !trap) begin
-			if (mem_do_prefetch || mem_do_rinst || mem_do_rdata)
-				`assert(!mem_do_wdata);
 
-			if (mem_do_prefetch || mem_do_rinst)
-				`assert(!mem_do_rdata);
+	val next_insn_opcode = RegEnable( (if(COMPRESSED_ISA) {mem_rdata_latched} else {io.mem.rdata}), mem_xfer)
 
-			if (mem_do_rdata)
-				`assert(!mem_do_prefetch && !mem_do_rinst);
 
-			if (mem_do_wdata)
-				`assert(!(mem_do_prefetch || mem_do_rinst || mem_do_rdata));
 
-			if (mem_state == 2 || mem_state == 3)
-				`assert(mem_valid || mem_do_prefetch);
-		end
-	end
+  printf("Warning\n")
+  when(mem_xfer){
+    mem_rdata_q := if(COMPRESSED_ISA) { mem_rdata_latched } else{ io.mem.rdata }
+  }
 
-	always @(posedge clk) begin
-		if (!resetn || trap) begin
-			if (!resetn)
-				mem_state <= 0;
-			if (!resetn || mem_ready)
-				mem_valid <= 0;
-			mem_la_secondword <= 0;
-			prefetched_high_word <= 0;
-		end else begin
-			if (mem_la_read || mem_la_write) begin
-				mem_addr <= mem_la_addr;
-				mem_wstrb <= mem_la_wstrb & {4{mem_la_write}};
-			end
-			if (mem_la_write) begin
-				mem_wdata <= mem_la_wdata;
-			end
-			case (mem_state)
-				0: begin
-					if (mem_do_prefetch || mem_do_rinst || mem_do_rdata) begin
-						mem_valid <= !mem_la_use_prefetched_high_word;
-						mem_instr <= mem_do_prefetch || mem_do_rinst;
-						mem_wstrb <= 0;
-						mem_state <= 1;
-					end
-					if (mem_do_wdata) begin
-						mem_valid <= 1;
-						mem_instr <= 0;
-						mem_state <= 2;
-					end
-				end
-				1: begin
-					`assert(mem_wstrb == 0);
-					`assert(mem_do_prefetch || mem_do_rinst || mem_do_rdata);
-					`assert(mem_valid == !mem_la_use_prefetched_high_word);
-					`assert(mem_instr == (mem_do_prefetch || mem_do_rinst));
-					if (mem_xfer) begin
-						if (COMPRESSED_ISA && mem_la_read) begin
-							mem_valid <= 1;
-							mem_la_secondword <= 1;
-							if (!mem_la_use_prefetched_high_word)
-								mem_16bit_buffer <= mem_rdata[31:16];
-						end else begin
-							mem_valid <= 0;
-							mem_la_secondword <= 0;
-							if (COMPRESSED_ISA && !mem_do_rdata) begin
-								if (~&mem_rdata[1:0] || mem_la_secondword) begin
-									mem_16bit_buffer <= mem_rdata[31:16];
-									prefetched_high_word <= 1;
-								end else begin
-									prefetched_high_word <= 0;
-								end
-							end
-							mem_state <= mem_do_rinst || mem_do_rdata ? 0 : 3;
-						end
-					end
-				end
-				2: begin
-					`assert(mem_wstrb != 0);
-					`assert(mem_do_wdata);
-					if (mem_xfer) begin
-						mem_valid <= 0;
-						mem_state <= 0;
-					end
-				end
-				3: begin
-					`assert(mem_wstrb == 0);
-					`assert(mem_do_prefetch);
-					if (mem_do_rinst) begin
-						mem_state <= 0;
-					end
-				end
-			endcase
-		end
+  if (COMPRESSED_ISA){
+    when(mem_done && (mem_do_prefetch | mem_do_rinst)){
+      when(mem_rdata_latched(1,0) === "b00".U){
+        when(mem_rdata_latched(15,13) === "b000".U){// C.ADDI4SPN
+          mem_rdata_q(14,12) := "b000".U
+          mem_rdata_q(31,20) := Cat(0.U(2.W), mem_rdata_latched(10,7), mem_rdata_latched(12,11), mem_rdata_latched.extract(5), mem_rdata_latched.extract(6), 0.U(2.W))
+        } .elsewhen( mem_rdata_latched(15,13) === "b010".U ){// C.LW
+          mem_rdata_q(31,20) := Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched(12,10), mem_rdata_latched.extract(6), 0.U(2.W))
+          mem_rdata_q(14,12) := "b010".U
+        } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){// C.SW
+          mem_rdata_q(31,25) := Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched.extract(12))
+          mem_rdata_q(11: 7) := Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)) 
+          mem_rdata_q(14:12) := "b010".U
+        }        
+      } .elsewhen( mem_rdata_latched(1,0) === "b01".U ){
+        when(mem_rdata_latched(15,13) === "b000".U){ // C.ADDI
+          mem_rdata_q(14,12) := "b000".U
+          mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
+        } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LI
+          mem_rdata_q(14,12) := "b000".U
+          mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
+        } .elsewhen(mem_rdata_latched(15,13) === "b011".U){
+          when(mem_rdata_latched(11,7) === 2.U) { // C.ADDI16SP
+            mem_rdata_q(14,12) := "b000".U
+            mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(4,3), mem_rdata_latched.extract(5), mem_rdata_latched.extract(2), mem_rdata_latched.extract(6), 0.U(4.W)).asSInt
+            } .otherwise{ // C.LUI
+            mem_rdata_q(31,12) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
+            }
+        } .elsewhen(mem_rdata_latched(15,13) === "b100".U){
+          when(mem_rdata_latched(11,10) === "b00".U) { // C.SRLI
+            mem_rdata_q(31,25) := "b0000000".U
+            mem_rdata_q(14,12) := "b101".U
+          }
+          when(mem_rdata_latched(11,10) === "b01".U) { // C.SRAI
+            mem_rdata_q(31,25) := "b0100000".U
+            mem_rdata_q(14,12) := "b101".U
+          }
+          when(mem_rdata_latched(11,10) === "b10".U) { // C.ANDI
+            mem_rdata_q(14,12) := "b111".U
+            mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
+          }
+          when(mem_rdata_latched(12,10) === "b011".U) { // C.SUB, C.XOR, C.OR, C.AND
+            when(mem_rdata_latched(6,5) === "b00".U) { mem_rdata_q(14,12) := "b000".U}
+            when(mem_rdata_latched(6,5) === "b01".U) { mem_rdata_q(14,12) := "b100".U}
+            when(mem_rdata_latched(6,5) === "b10".U) { mem_rdata_q(14,12) := "b110".U}
+            when(mem_rdata_latched(6,5) === "b11".U) { mem_rdata_q(14,12) := "b111".U}
+            mem_rdata_q(31,25) := Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U, "b0000000".U)
+          }
+        } .elsewhen(mem_rdata_latched(15,13) === "b110".U){// C.BEQZ
+          mem_rdata_q(14,12) := "b000".U
+          { mem_rdata_q[31], mem_rdata_q[7], mem_rdata_q[30:25], mem_rdata_q[11:8] } <=
+              $signed({mem_rdata_latched[12], mem_rdata_latched[6:5], mem_rdata_latched[2],
+                  mem_rdata_latched[11:10], mem_rdata_latched[4:3]});
+        } .elsewhen(mem_rdata_latched(15,13) === "b111".U){// C.BNEZ
+          mem_rdata_q(14,12) := "b001".U
+          { mem_rdata_q[31], mem_rdata_q[7], mem_rdata_q[30:25], mem_rdata_q[11:8] } <=
+              $signed({mem_rdata_latched[12], mem_rdata_latched[6:5], mem_rdata_latched[2],
+                  mem_rdata_latched[11:10], mem_rdata_latched[4:3]});            
+        }        
+      } .elsewhen( mem_rdata_latched(1,0) === "b10".U ){
+        when(mem_rdata_latched(15,13) === "b000".U){// C.SLLI
+          mem_rdata_q(31,25) := "b0000000".U
+          mem_rdata_q(14,12) := "b001".U
+        } .elsewhen( mem_rdata_latched(15,13) === "b010".U ){// C.LWSP
+          mem_rdata_q(31,20) := Cat(0.U(4.W), mem_rdata_latched(3,2), mem_rdata_latched.extract(12), mem_rdata_latched(6,4), 0.U(2.W))
+          mem_rdata_q(14,12) := "b010".U
+        } .elsewhen( mem_rdata_latched(15,13) === "b100".U ){
+          when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
+            mem_rdata_q(14,12) := "b000".U
+            mem_rdata_q(31,20) := 0.U
+          }
+          when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
+            mem_rdata_q(14,12) := "b000".U
+            mem_rdata_q(31,25) := "b0000000".U
+          }
+          when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
+            mem_rdata_q(14,12) := "b000".U
+            mem_rdata_q(31,20) := 0.U
+          }
+          when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
+            mem_rdata_q(14,12) := "b000".U
+            mem_rdata_q(31,25) := "b0000000".U
+          }
+        } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){ // C.SWSP
+            mem_rdata_q(31,25) := Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched(12,11))
+            mem_rdata_q(11, 7) := Cat(mem_rdata_latched(11,9), 0.U(2.W))
+            mem_rdata_q(14,12) := "b010".U
+        }
+      }
+    }
+  }
 
-		if (clear_prefetched_high_word)
-			prefetched_high_word <= 0;
-	end
+
+
+  when(~reset & ~trap) {
+    when(mem_do_prefetch | mem_do_rinst | mem_do_rdata){
+      assert(~mem_do_wdata)
+    }
+    when(mem_do_prefetch | mem_do_rinst){
+      assert(~mem_do_rdata)
+    }
+    when(mem_do_rdata){
+      assert(~mem_do_prefetch & ~mem_do_rinst)
+    }
+    when(mem_do_wdata){
+      assert(~(mem_do_prefetch | mem_do_rinst | mem_do_rdata))
+    }
+    when(mem_state === 2.U | mem_state === 3.U){
+      assert(mem_valid | mem_do_prefetch)
+    }
+  }
+
+
+  when(trap){
+    when(io.mem.ready){
+      mem_valid := false.B
+    }
+
+    mem_la_secondword := false.B
+    prefetched_high_word := false.B      
+  } .otherwise{
+    when(mem_la_read | mem_la_write) {
+      mem_addr  := mem_la_addr
+      mem_wstrb := mem_la_wstrb & Fill(4, mem_la_write)
+    }
+    when(mem_la_write) {
+      mem_wdata := mem_la_wdata
+    }
+
+    when( mem_state === 0.U ){
+      when(mem_do_prefetch | mem_do_rinst | mem_do_rdata){
+        mem_valid := ~mem_la_use_prefetched_high_word
+        mem_instr := mem_do_prefetch | mem_do_rinst
+        mem_wstrb := 0.U
+        mem_state := 1.U
+      }
+      when(mem_do_wdata){
+        mem_valid := true.B
+        mem_instr := false.B
+        mem_state := 2.U
+      }      
+    } .elsewhen( mem_state === 1.U ){
+      assert(mem_wstrb === 0.U)
+      assert(mem_do_prefetch | mem_do_rinst | mem_do_rdata)
+      assert(mem_valid === ~mem_la_use_prefetched_high_word)
+      assert(mem_instr === (mem_do_prefetch | mem_do_rinst))
+      when(mem_xfer){
+        if (COMPRESSED_ISA) {
+          when(mem_la_read){
+            mem_valid := true.B
+            mem_la_secondword := true.B
+            when(~mem_la_use_prefetched_high_word){
+              mem_16bit_buffer := mem_rdata(31,16)
+            }
+          } .otherwise{
+            mem_valid := false.B
+            mem_la_secondword := false.B
+            when( ~mem_do_rdata ){
+              when(~mem_rdata(1,0).andR | mem_la_secondword){
+                mem_16bit_buffer := mem_rdata(31,16)
+                prefetched_high_word := true.B
+              } .otherwise{
+                prefetched_high_word := false.B
+              }            
+            }
+
+            mem_state := Mux(mem_do_rinst | mem_do_rdata, 0.U, 3.U)
+          } 
+        } else {
+          mem_valid := false.B
+          mem_la_secondword := false.B
+          mem_state := Mux(mem_do_rinst | mem_do_rdata, 0.U, 3.U)
+        }       
+      }        
+    } .elsewhen( mem_state === 2.U ){
+        assert(mem_wstrb =/= 0.U)
+        assert(mem_do_wdata)
+        when(mem_xfer){
+          mem_valid := false.B
+          mem_state := 0.U
+        }
+    } .elsewhen( mem_state === 3.U ){
+      assert(mem_wstrb === 0.U)
+      assert(mem_do_prefetch)
+      when(mem_do_rinst){
+        mem_state := 0.U
+      }     
+    }
+  }
+
+  when(clear_prefetched_high_word){
+    prefetched_high_word := false.B
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 	// Instruction Decoder
 
-	reg instr_lui, instr_auipc, instr_jal, instr_jalr;
-	reg instr_beq, instr_bne, instr_blt, instr_bge, instr_bltu, instr_bgeu;
-	reg instr_lb, instr_lh, instr_lw, instr_lbu, instr_lhu, instr_sb, instr_sh, instr_sw;
-	reg instr_addi, instr_slti, instr_sltiu, instr_xori, instr_ori, instr_andi, instr_slli, instr_srli, instr_srai;
-	reg instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and;
-	reg instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh, instr_ecall_ebreak, instr_fence;
-	reg instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer;
-	wire instr_trap;
 
-	reg [regindex_bits-1:0] decoded_rd, decoded_rs1;
-	reg [4:0] decoded_rs2;
+
+
+
+
+
+	val instr_beq  = RegInit(false.B)
+  val instr_bne  = RegInit(false.B)
+  val instr_blt  = RegInit(false.B)
+  val instr_bge  = RegInit(false.B)
+  val instr_bltu = RegInit(false.B)
+  val instr_bgeu = RegInit(false.B)
+
+
+  val instr_addi  = RegInit(false.B)
+  val instr_slti  = RegInit(false.B)
+  val instr_sltiu = RegInit(false.B)
+  val instr_xori  = RegInit(false.B)
+  val instr_ori   = RegInit(false.B)
+  val instr_andi  = RegInit(false.B)
+   
+  val instr_add   = RegInit(false.B)
+  val instr_sub   = RegInit(false.B)
+  val instr_sll   = RegInit(false.B)
+  val instr_slt   = RegInit(false.B)
+  val instr_sltu  = RegInit(false.B)
+  val instr_xor   = RegInit(false.B)
+  val instr_srl   = RegInit(false.B)
+  val instr_sra   = RegInit(false.B)
+  val instr_or    = RegInit(false.B)
+  val instr_and   = RegInit(false.B)
+  val instr_fence = RegInit(false.B)
+
+
+  val instr_lui = Reg(Bool())
+  val instr_auipc = Reg(Bool())
+  val instr_jal = Reg(Bool())
+  val instr_jalr = Reg(Bool())
+	val instr_lb = Reg(Bool())
+  val instr_lh = Reg(Bool())
+  val instr_lw = Reg(Bool())
+  val instr_lbu = Reg(Bool())
+  val instr_lhu = Reg(Bool())
+  val instr_sb = Reg(Bool())
+  val instr_sh = Reg(Bool())
+  val instr_sw = Reg(Bool())
+  val instr_slli = Reg(Bool())
+  val instr_srli = Reg(Bool())
+  val instr_srai = Reg(Bool())
+	val instr_rdcycle = Reg(Bool())
+  val instr_rdcycleh = Reg(Bool())
+  val instr_rdinstr = Reg(Bool())
+  val instr_rdinstrh = Reg(Bool())
+  val instr_ecall_ebreak = Reg(Bool())
+	val instr_getq = Reg(Bool())
+  val instr_setq = Reg(Bool())
+  val instr_retirq = Reg(Bool())
+  val instr_maskirq = Reg(Bool())
+  val instr_waitirq = Reg(Bool())
+  val instr_timer = Reg(Bool())
+
+
+
+  val decoded_rd  = Reg(UInt(regindex_bits.W))
+  val decoded_rs1 = Reg(UInt(regindex_bits.W))
+	val decoded_rs2 = Reg(UInt(5.W))
+
 	reg [31:0] decoded_imm, decoded_imm_j;
 	reg decoder_trigger;
 	reg decoder_trigger_q;
 	reg decoder_pseudo_trigger;
 	reg decoder_pseudo_trigger_q;
-	reg compressed_instr;
+	val compressed_instr = Reg(Bool())
 
-	reg is_lui_auipc_jal;
+	val is_lui_auipc_jal = RegNext(instr_lui | instr_auipc | instr_jal)
 	reg is_lb_lh_lw_lbu_lhu;
 	reg is_slli_srli_srai;
 	reg is_jalr_addi_slti_sltiu_xori_ori_andi;
 	reg is_sb_sh_sw;
 	reg is_sll_srl_sra;
-	reg is_lui_auipc_jal_jalr_addi_add_sub;
-	reg is_slti_blt_slt;
-	reg is_sltiu_bltu_sltu;
-	reg is_beq_bne_blt_bge_bltu_bgeu;
-	reg is_lbu_lhu_lw;
+	val is_lui_auipc_jal_jalr_addi_add_sub = RegNext( Mux( decoder_trigger & ~decoder_pseudo_trigger, false.B, instr_lui | instr_auipc | instr_jal | instr_jalr | instr_addi | instr_add | instr_sub ) )
+	val is_slti_blt_slt = RegNext(instr_slti | instr_blt | instr_slt)
+	val is_sltiu_bltu_sltu = RegNext(instr_sltiu | instr_bltu | instr_sltu)
+
+
+	val is_beq_bne_blt_bge_bltu_bgeu = RegInit(false.B)
+	val is_lbu_lhu_lw = RegNext(instr_lbu | instr_lhu | instr_lw)
+
+
 	reg is_alu_reg_imm;
 	reg is_alu_reg_reg;
-	reg is_compare;
+	val is_compare = RegNext( Mux( decoder_trigger & ~decoder_pseudo_trigger, false.B, is_beq_bne_blt_bge_bltu_bgeu | instr_slti | instr_slt | instr_sltiu | instr_sltu) , false.B)
 
-	assign instr_trap = (CATCH_ILLINSN || WITH_PCPI) && !{instr_lui, instr_auipc, instr_jal, instr_jalr,
-			instr_beq, instr_bne, instr_blt, instr_bge, instr_bltu, instr_bgeu,
-			instr_lb, instr_lh, instr_lw, instr_lbu, instr_lhu, instr_sb, instr_sh, instr_sw,
-			instr_addi, instr_slti, instr_sltiu, instr_xori, instr_ori, instr_andi, instr_slli, instr_srli, instr_srai,
-			instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
-			instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh, instr_fence,
-			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer};
+	val instr_trap =
+    if( CATCH_ILLINSN || WITH_PCPI ){
+      ~(
+        instr_lui | instr_auipc | instr_jal | instr_jalr |
+        instr_beq | instr_bne | instr_blt | instr_bge | instr_bltu | instr_bgeu |
+        instr_lb  | instr_lh | instr_lw | instr_lbu | instr_lhu | instr_sb | instr_sh | instr_sw |
+        instr_addi| instr_slti | instr_sltiu | instr_xori | instr_ori | instr_andi | instr_slli | instr_srli | instr_srai |
+        instr_add | instr_sub | instr_sll | instr_slt | instr_sltu | instr_xor | instr_srl | instr_sra | instr_or | instr_and |
+        instr_rdcycle | instr_rdcycleh | instr_rdinstr | instr_rdinstrh | instr_fence |
+        instr_getq| instr_setq | instr_retirq | instr_maskirq | instr_waitirq | instr_timer
+      )
+    } else { false.B }
+ 
 
-	wire is_rdcycle_rdcycleh_rdinstr_rdinstrh;
-	assign is_rdcycle_rdcycleh_rdinstr_rdinstrh = |{instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh};
+	val is_rdcycle_rdcycleh_rdinstr_rdinstrh = instr_rdcycle | instr_rdcycleh | instr_rdinstr | instr_rdinstrh
 
-	reg [63:0] new_ascii_instr;
-	`FORMAL_KEEP reg [63:0] dbg_ascii_instr;
-	`FORMAL_KEEP reg [31:0] dbg_insn_imm;
-	`FORMAL_KEEP reg [4:0] dbg_insn_rs1;
-	`FORMAL_KEEP reg [4:0] dbg_insn_rs2;
-	`FORMAL_KEEP reg [4:0] dbg_insn_rd;
-	`FORMAL_KEEP reg [31:0] dbg_rs1val;
-	`FORMAL_KEEP reg [31:0] dbg_rs2val;
-	`FORMAL_KEEP reg dbg_rs1val_valid;
-	`FORMAL_KEEP reg dbg_rs2val_valid;
+	val dbg_insn_opcode = Wire(UInt(32.W))
 
-	always @* begin
-		new_ascii_instr = "";
+	val dbg_ascii_instr = Wire(UInt(64.W));   dontTouch(dbg_ascii_instr) 
+	val dbg_insn_imm    = Wire( UInt(32.W) ); dontTouch(dbg_insn_imm) 
+	val dbg_insn_rs1    = Wire( UInt(5.W) );  dontTouch(dbg_insn_rs1) 
+	val dbg_insn_rs2    = Wire( UInt(5.W) );  dontTouch(dbg_insn_rs2) 
+	val dbg_insn_rd     = Wire( UInt(5.W) );  dontTouch(dbg_insn_rd) 
 
-		if (instr_lui)      new_ascii_instr = "lui";
-		if (instr_auipc)    new_ascii_instr = "auipc";
-		if (instr_jal)      new_ascii_instr = "jal";
-		if (instr_jalr)     new_ascii_instr = "jalr";
+	dontTouch() reg [31:0] dbg_rs1val;
+	dontTouch() reg [31:0] dbg_rs2val;
+	dontTouch() reg dbg_rs1val_valid;
+	dontTouch() reg dbg_rs2val_valid;
 
-		if (instr_beq)      new_ascii_instr = "beq";
-		if (instr_bne)      new_ascii_instr = "bne";
-		if (instr_blt)      new_ascii_instr = "blt";
-		if (instr_bge)      new_ascii_instr = "bge";
-		if (instr_bltu)     new_ascii_instr = "bltu";
-		if (instr_bgeu)     new_ascii_instr = "bgeu";
 
-		if (instr_lb)       new_ascii_instr = "lb";
-		if (instr_lh)       new_ascii_instr = "lh";
-		if (instr_lw)       new_ascii_instr = "lw";
-		if (instr_lbu)      new_ascii_instr = "lbu";
-		if (instr_lhu)      new_ascii_instr = "lhu";
-		if (instr_sb)       new_ascii_instr = "sb";
-		if (instr_sh)       new_ascii_instr = "sh";
-		if (instr_sw)       new_ascii_instr = "sw";
 
-		if (instr_addi)     new_ascii_instr = "addi";
-		if (instr_slti)     new_ascii_instr = "slti";
-		if (instr_sltiu)    new_ascii_instr = "sltiu";
-		if (instr_xori)     new_ascii_instr = "xori";
-		if (instr_ori)      new_ascii_instr = "ori";
-		if (instr_andi)     new_ascii_instr = "andi";
-		if (instr_slli)     new_ascii_instr = "slli";
-		if (instr_srli)     new_ascii_instr = "srli";
-		if (instr_srai)     new_ascii_instr = "srai";
+	val q_ascii_instr = RegNext( dbg_ascii_instr )
+	val q_insn_imm    = RegNext( dbg_insn_imm )
+	val q_insn_opcode = RegNext( dbg_insn_opcode )
+	val q_insn_rs1    = RegNext( dbg_insn_rs1 )
+	val q_insn_rs2    = RegNext( dbg_insn_rs2 )
+	val q_insn_rd     = RegNext( dbg_insn_rd )
+	val dbg_next      = RegNext( launch_next_insn )
 
-		if (instr_add)      new_ascii_instr = "add";
-		if (instr_sub)      new_ascii_instr = "sub";
-		if (instr_sll)      new_ascii_instr = "sll";
-		if (instr_slt)      new_ascii_instr = "slt";
-		if (instr_sltu)     new_ascii_instr = "sltu";
-		if (instr_xor)      new_ascii_instr = "xor";
-		if (instr_srl)      new_ascii_instr = "srl";
-		if (instr_sra)      new_ascii_instr = "sra";
-		if (instr_or)       new_ascii_instr = "or";
-		if (instr_and)      new_ascii_instr = "and";
+	val launch_next_insn = Wire(Bool())
+	val dbg_valid_insn = RegInit(false.B)
 
-		if (instr_rdcycle)  new_ascii_instr = "rdcycle";
-		if (instr_rdcycleh) new_ascii_instr = "rdcycleh";
-		if (instr_rdinstr)  new_ascii_instr = "rdinstr";
-		if (instr_rdinstrh) new_ascii_instr = "rdinstrh";
-		if (instr_fence)    new_ascii_instr = "fence";
+	when(trap){
+		dbg_valid_insn := false.B
+  } .elsewhen(launch_next_insn){
+		dbg_valid_insn := true.B
+  }
 
-		if (instr_getq)     new_ascii_instr = "getq";
-		if (instr_setq)     new_ascii_instr = "setq";
-		if (instr_retirq)   new_ascii_instr = "retirq";
-		if (instr_maskirq)  new_ascii_instr = "maskirq";
-		if (instr_waitirq)  new_ascii_instr = "waitirq";
-		if (instr_timer)    new_ascii_instr = "timer";
-	end
 
-	reg [63:0] q_ascii_instr;
-	reg [31:0] q_insn_imm;
-	reg [31:0] q_insn_opcode;
-	reg [4:0] q_insn_rs1;
-	reg [4:0] q_insn_rs2;
-	reg [4:0] q_insn_rd;
-	reg dbg_next;
+	val cached_ascii_instr = RegEnable(new_ascii_instr, decoder_trigger_q)
+	val cached_insn_imm    = RegEnable(decoded_imm, decoder_trigger_q)
+	val cached_insn_opcode = RegEnable( Mux( next_insn_opcode(1,0) === "b11".U, next_insn_opcode, next_insn_opcode(15,0) ), decoder_trigger_q)
+	val cached_insn_rs1 = RegEnable(decoded_rs1, decoder_trigger_q)
+	val cached_insn_rs2 = RegEnable(decoded_rs2, decoder_trigger_q)
+	val cached_insn_rd  = RegEnable(decoded_rd,  decoder_trigger_q)
 
-	wire launch_next_insn;
-	reg dbg_valid_insn;
+	val dbg_insn_addr  = RegEnable(next_pc, launch_next_insn)
 
-	reg [63:0] cached_ascii_instr;
-	reg [31:0] cached_insn_imm;
-	reg [31:0] cached_insn_opcode;
-	reg [4:0] cached_insn_rs1;
-	reg [4:0] cached_insn_rs2;
-	reg [4:0] cached_insn_rd;
+  dbg_ascii_instr := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_ascii_instr, new_ascii_instr) ,q_ascii_instr  )
+  dbg_insn_imm    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_imm, decoded_imm), q_insn_imm )
+  dbg_insn_opcode := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_opcode, Mux(&next_insn_opcode[1:0], next_insn_opcode, {16'b0, next_insn_opcode[15:0]}) ), q_insn_opcode)
+  dbg_insn_rs1    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rs1, decoded_rs1 ), q_insn_rs1 )
+  dbg_insn_rs2    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rs2, decoded_rs2 ), q_insn_rs2 )
+  dbg_insn_rd     := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rd , decoded_rd  ), q_insn_rd  )
 
-	always @(posedge clk) begin
-		q_ascii_instr <= dbg_ascii_instr;
-		q_insn_imm <= dbg_insn_imm;
-		q_insn_opcode <= dbg_insn_opcode;
-		q_insn_rs1 <= dbg_insn_rs1;
-		q_insn_rs2 <= dbg_insn_rs2;
-		q_insn_rd <= dbg_insn_rd;
-		dbg_next <= launch_next_insn;
-
-		if (!resetn || trap)
-			dbg_valid_insn <= 0;
-		else if (launch_next_insn)
-			dbg_valid_insn <= 1;
-
-		if (decoder_trigger_q) begin
-			cached_ascii_instr <= new_ascii_instr;
-			cached_insn_imm <= decoded_imm;
-			if (&next_insn_opcode[1:0])
-				cached_insn_opcode <= next_insn_opcode;
-			else
-				cached_insn_opcode <= {16'b0, next_insn_opcode[15:0]};
-			cached_insn_rs1 <= decoded_rs1;
-			cached_insn_rs2 <= decoded_rs2;
-			cached_insn_rd <= decoded_rd;
-		end
-
-		if (launch_next_insn) begin
-			dbg_insn_addr <= next_pc;
-		end
-	end
-
-	always @* begin
-		dbg_ascii_instr = q_ascii_instr;
-		dbg_insn_imm = q_insn_imm;
-		dbg_insn_opcode = q_insn_opcode;
-		dbg_insn_rs1 = q_insn_rs1;
-		dbg_insn_rs2 = q_insn_rs2;
-		dbg_insn_rd = q_insn_rd;
-
-		if (dbg_next) begin
-			if (decoder_pseudo_trigger_q) begin
-				dbg_ascii_instr = cached_ascii_instr;
-				dbg_insn_imm = cached_insn_imm;
-				dbg_insn_opcode = cached_insn_opcode;
-				dbg_insn_rs1 = cached_insn_rs1;
-				dbg_insn_rs2 = cached_insn_rs2;
-				dbg_insn_rd = cached_insn_rd;
-			end else begin
-				dbg_ascii_instr = new_ascii_instr;
-				if (&next_insn_opcode[1:0])
-					dbg_insn_opcode = next_insn_opcode;
-				else
-					dbg_insn_opcode = {16'b0, next_insn_opcode[15:0]};
-				dbg_insn_imm = decoded_imm;
-				dbg_insn_rs1 = decoded_rs1;
-				dbg_insn_rs2 = decoded_rs2;
-				dbg_insn_rd = decoded_rd;
-			end
-		end
-	end
 
 `ifdef DEBUGASM
-	always @(posedge clk) begin
-		if (dbg_next) begin
-			$display("debugasm %x %x %s", dbg_insn_addr, dbg_insn_opcode, dbg_ascii_instr ? dbg_ascii_instr : "*");
-		end
-	end
+		when(dbg_next){
+			printf( s"debugasm %x %x %s", dbg_insn_addr, dbg_insn_opcode, Mux(dbg_ascii_instr, dbg_ascii_instr, "*") )
+    }
 `endif
 
 `ifdef DEBUG
-	always @(posedge clk) begin
-		if (dbg_next) begin
-			if (&dbg_insn_opcode[1:0])
-				$display("DECODE: 0x%08x 0x%08x %-0s", dbg_insn_addr, dbg_insn_opcode, dbg_ascii_instr ? dbg_ascii_instr : "UNKNOWN");
-			else
-				$display("DECODE: 0x%08x     0x%04x %-0s", dbg_insn_addr, dbg_insn_opcode[15:0], dbg_ascii_instr ? dbg_ascii_instr : "UNKNOWN");
-		end
-	end
+  when(dbg_next){
+    when(&dbg_insn_opcode[1:0]){
+      printf( s"DECODE: 0x%08x 0x%08x %-0s", dbg_insn_addr, dbg_insn_opcode, Mux(dbg_ascii_instr, dbg_ascii_instr, "UNKNOWN") )
+    } .otherwise{
+      printf( s"DECODE: 0x%08x 0x%04x %-0s", dbg_insn_addr, dbg_insn_opcode(15,0), Mux(dbg_ascii_instr, dbg_ascii_instr, "UNKNOWN") )
+    }
+
+  }
 `endif
 
 	always @(posedge clk) begin
-		is_lui_auipc_jal <= |{instr_lui, instr_auipc, instr_jal};
-		is_lui_auipc_jal_jalr_addi_add_sub <= |{instr_lui, instr_auipc, instr_jal, instr_jalr, instr_addi, instr_add, instr_sub};
-		is_slti_blt_slt <= |{instr_slti, instr_blt, instr_slt};
-		is_sltiu_bltu_sltu <= |{instr_sltiu, instr_bltu, instr_sltu};
-		is_lbu_lhu_lw <= |{instr_lbu, instr_lhu, instr_lw};
-		is_compare <= |{is_beq_bne_blt_bge_bltu_bgeu, instr_slti, instr_slt, instr_sltiu, instr_sltu};
+		when(mem_do_rinst && mem_done){
+			instr_lui     := mem_rdata_latched(6,0) === "b0110111".U
+			instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
+			instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
+			instr_jalr    := mem_rdata_latched(6,0) === "b1100111".U & mem_rdata_latched(14,12) === "b000".U
+			instr_retirq  := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U} else {false.B}
+			instr_waitirq := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000100".U} else {false.B}
 
-		if (mem_do_rinst && mem_done) begin
-			instr_lui     <= mem_rdata_latched[6:0] == 7'b0110111;
-			instr_auipc   <= mem_rdata_latched[6:0] == 7'b0010111;
-			instr_jal     <= mem_rdata_latched[6:0] == 7'b1101111;
-			instr_jalr    <= mem_rdata_latched[6:0] == 7'b1100111 && mem_rdata_latched[14:12] == 3'b000;
-			instr_retirq  <= mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000010 && ENABLE_IRQ;
-			instr_waitirq <= mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000100 && ENABLE_IRQ;
-
-			is_beq_bne_blt_bge_bltu_bgeu <= mem_rdata_latched[6:0] == 7'b1100011;
-			is_lb_lh_lw_lbu_lhu          <= mem_rdata_latched[6:0] == 7'b0000011;
-			is_sb_sh_sw                  <= mem_rdata_latched[6:0] == 7'b0100011;
-			is_alu_reg_imm               <= mem_rdata_latched[6:0] == 7'b0010011;
-			is_alu_reg_reg               <= mem_rdata_latched[6:0] == 7'b0110011;
+			is_beq_bne_blt_bge_bltu_bgeu := mem_rdata_latched(6,0) === "b1100011".U
+			is_lb_lh_lw_lbu_lhu          := mem_rdata_latched(6,0) === "b0000011".U
+			is_sb_sh_sw                  := mem_rdata_latched(6,0) === "b0100011".U
+			is_alu_reg_imm               := mem_rdata_latched(6,0) === "b0010011".U
+			is_alu_reg_reg               := mem_rdata_latched(6,0) === "b0110011".U
 
 			{ decoded_imm_j[31:20], decoded_imm_j[10:1], decoded_imm_j[11], decoded_imm_j[19:12], decoded_imm_j[0] } <= $signed({mem_rdata_latched[31:12], 1'b0});
 
-			decoded_rd <= mem_rdata_latched[11:7];
-			decoded_rs1 <= mem_rdata_latched[19:15];
-			decoded_rs2 <= mem_rdata_latched[24:20];
+			decoded_rd  := mem_rdata_latched(11,7)
+			decoded_rs1 := mem_rdata_latched(19,15)
+			decoded_rs2 := mem_rdata_latched(24,20)
 
-			if (mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000000 && ENABLE_IRQ && ENABLE_IRQ_QREGS)
-				decoded_rs1[regindex_bits-1] <= 1; // instr_getq
+      if(ENABLE_IRQ && ENABLE_IRQ_QREGS){
+        when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000000".U ){
+          decoded_rs1 := Cat( 1.U(1.W), mem_rdata_latched(19,15) ) // instr_getq
+        }        
+      }
 
-			if (mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000010 && ENABLE_IRQ)
-				decoded_rs1 <= ENABLE_IRQ_QREGS ? irqregs_offset : 3; // instr_retirq
+      if(ENABLE_IRQ){
+        when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U ){
+          decoded_rs1 := if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}; // instr_retirq
+        }
 
-			compressed_instr <= 0;
-			if (COMPRESSED_ISA && mem_rdata_latched[1:0] != 2'b11) begin
-				compressed_instr <= 1;
-				decoded_rd <= 0;
-				decoded_rs1 <= 0;
-				decoded_rs2 <= 0;
+      }
 
-				{ decoded_imm_j[31:11], decoded_imm_j[4], decoded_imm_j[9:8], decoded_imm_j[10], decoded_imm_j[6],
-				  decoded_imm_j[7], decoded_imm_j[3:1], decoded_imm_j[5], decoded_imm_j[0] } <= $signed({mem_rdata_latched[12:2], 1'b0});
 
-				case (mem_rdata_latched[1:0])
-					2'b00: begin // Quadrant 0
-						case (mem_rdata_latched[15:13])
-							3'b000: begin // C.ADDI4SPN
-								is_alu_reg_imm <= |mem_rdata_latched[12:5];
-								decoded_rs1 <= 2;
-								decoded_rd <= 8 + mem_rdata_latched[4:2];
-							end
-							3'b010: begin // C.LW
-								is_lb_lh_lw_lbu_lhu <= 1;
-								decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-								decoded_rd <= 8 + mem_rdata_latched[4:2];
-							end
-							3'b110: begin // C.SW
-								is_sb_sh_sw <= 1;
-								decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-								decoded_rs2 <= 8 + mem_rdata_latched[4:2];
-							end
-						endcase
-					end
-					2'b01: begin // Quadrant 1
-						case (mem_rdata_latched[15:13])
-							3'b000: begin // C.NOP / C.ADDI
-								is_alu_reg_imm <= 1;
-								decoded_rd <= mem_rdata_latched[11:7];
-								decoded_rs1 <= mem_rdata_latched[11:7];
-							end
-							3'b001: begin // C.JAL
-								instr_jal <= 1;
-								decoded_rd <= 1;
-							end
-							3'b 010: begin // C.LI
-								is_alu_reg_imm <= 1;
-								decoded_rd <= mem_rdata_latched[11:7];
-								decoded_rs1 <= 0;
-							end
-							3'b 011: begin
-								if (mem_rdata_latched[12] || mem_rdata_latched[6:2]) begin
-									if (mem_rdata_latched[11:7] == 2) begin // C.ADDI16SP
-										is_alu_reg_imm <= 1;
-										decoded_rd <= mem_rdata_latched[11:7];
-										decoded_rs1 <= mem_rdata_latched[11:7];
-									end else begin // C.LUI
-										instr_lui <= 1;
-										decoded_rd <= mem_rdata_latched[11:7];
-										decoded_rs1 <= 0;
-									end
-								end
-							end
-							3'b100: begin
-								if (!mem_rdata_latched[11] && !mem_rdata_latched[12]) begin // C.SRLI, C.SRAI
-									is_alu_reg_imm <= 1;
-									decoded_rd <= 8 + mem_rdata_latched[9:7];
-									decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-									decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
-								end
-								if (mem_rdata_latched[11:10] == 2'b10) begin // C.ANDI
-									is_alu_reg_imm <= 1;
-									decoded_rd <= 8 + mem_rdata_latched[9:7];
-									decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-								end
-								if (mem_rdata_latched[12:10] == 3'b011) begin // C.SUB, C.XOR, C.OR, C.AND
-									is_alu_reg_reg <= 1;
-									decoded_rd <= 8 + mem_rdata_latched[9:7];
-									decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-									decoded_rs2 <= 8 + mem_rdata_latched[4:2];
-								end
-							end
-							3'b101: begin // C.J
-								instr_jal <= 1;
-							end
-							3'b110: begin // C.BEQZ
-								is_beq_bne_blt_bge_bltu_bgeu <= 1;
-								decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-								decoded_rs2 <= 0;
-							end
-							3'b111: begin // C.BNEZ
-								is_beq_bne_blt_bge_bltu_bgeu <= 1;
-								decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-								decoded_rs2 <= 0;
-							end
-						endcase
-					end
-					2'b10: begin // Quadrant 2
-						case (mem_rdata_latched[15:13])
-							3'b000: begin // C.SLLI
-								if (!mem_rdata_latched[12]) begin
-									is_alu_reg_imm <= 1;
-									decoded_rd <= mem_rdata_latched[11:7];
-									decoded_rs1 <= mem_rdata_latched[11:7];
-									decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
-								end
-							end
-							3'b010: begin // C.LWSP
-								if (mem_rdata_latched[11:7]) begin
-									is_lb_lh_lw_lbu_lhu <= 1;
-									decoded_rd <= mem_rdata_latched[11:7];
-									decoded_rs1 <= 2;
-								end
-							end
-							3'b100: begin
-								if (mem_rdata_latched[12] == 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JR
-									instr_jalr <= 1;
-									decoded_rd <= 0;
-									decoded_rs1 <= mem_rdata_latched[11:7];
-								end
-								if (mem_rdata_latched[12] == 0 && mem_rdata_latched[6:2] != 0) begin // C.MV
-									is_alu_reg_reg <= 1;
-									decoded_rd <= mem_rdata_latched[11:7];
-									decoded_rs1 <= 0;
-									decoded_rs2 <= mem_rdata_latched[6:2];
-								end
-								if (mem_rdata_latched[12] != 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JALR
-									instr_jalr <= 1;
-									decoded_rd <= 1;
-									decoded_rs1 <= mem_rdata_latched[11:7];
-								end
-								if (mem_rdata_latched[12] != 0 && mem_rdata_latched[6:2] != 0) begin // C.ADD
-									is_alu_reg_reg <= 1;
-									decoded_rd <= mem_rdata_latched[11:7];
-									decoded_rs1 <= mem_rdata_latched[11:7];
-									decoded_rs2 <= mem_rdata_latched[6:2];
-								end
-							end
-							3'b110: begin // C.SWSP
-								is_sb_sh_sw <= 1;
-								decoded_rs1 <= 2;
-								decoded_rs2 <= mem_rdata_latched[6:2];
-							end
-						endcase
-					end
-				endcase
-			end
-		end
+			compressed_instr := 
+        if (COMPRESSED_ISA){ mem_rdata_latched(1,0) =/= "b11".U } else { false.B }
+
+
+
+			if (COMPRESSED_ISA){
+        when(mem_rdata_latched(1,0) =/= "b11".U){
+          decoded_rd  := 0.U
+          decoded_rs1 := 0.U
+          decoded_rs2 := 0.U
+
+          { decoded_imm_j[31:11], decoded_imm_j[4], decoded_imm_j[9:8], decoded_imm_j[10], decoded_imm_j[6],
+            decoded_imm_j[7], decoded_imm_j[3:1], decoded_imm_j[5], decoded_imm_j[0] } <= $signed({mem_rdata_latched[12:2], 1'b0});
+
+          when( mem_rdata_latched[1:0] === "b00".U){ // Quadrant 0
+            when(mem_rdata_latched[15:13] === "b000".U){ // C.ADDI4SPN
+                is_alu_reg_imm <= |mem_rdata_latched[12:5];
+                decoded_rs1 <= 2;
+                decoded_rd <= 8 + mem_rdata_latched[4:2];              
+            } .elsewhen(mem_rdata_latched[15:13] === "b010".U){// C.LW
+                is_lb_lh_lw_lbu_lhu <= 1;
+                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+                decoded_rd <= 8 + mem_rdata_latched[4:2];
+            } .elsewhen(mem_rdata_latched[15:13] === "b110".U){// C.SW
+                is_sb_sh_sw <= 1;
+                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+                decoded_rs2 <= 8 + mem_rdata_latched[4:2];
+            }           
+          } .elsewhen( mem_rdata_latched[1:0] === "b01".U){ // Quadrant 1
+            when(mem_rdata_latched[15:13] === "b000".U){ // C.NOP / C.ADDI
+                is_alu_reg_imm <= 1;
+                decoded_rd <= mem_rdata_latched[11:7];
+                decoded_rs1 <= mem_rdata_latched[11:7];              
+            } .elsewhen( mem_rdata_latched[15:13] === "b001".U ){ // C.JAL
+                instr_jal <= 1;
+                decoded_rd <= 1;              
+            } .elsewhen( mem_rdata_latched[15:13] === "b010".U ){ // C.LI
+                is_alu_reg_imm <= 1;
+                decoded_rd <= mem_rdata_latched[11:7];
+                decoded_rs1 <= 0;
+            } .elsewhen( mem_rdata_latched[15:13] === "b011".U ){
+                if (mem_rdata_latched[12] || mem_rdata_latched[6:2]) begin
+                  if (mem_rdata_latched[11:7] == 2) begin // C.ADDI16SP
+                    is_alu_reg_imm <= 1;
+                    decoded_rd <= mem_rdata_latched[11:7];
+                    decoded_rs1 <= mem_rdata_latched[11:7];
+                  end else begin // C.LUI
+                    instr_lui <= 1;
+                    decoded_rd <= mem_rdata_latched[11:7];
+                    decoded_rs1 <= 0;
+                  end
+                end
+            } .elsewhen( mem_rdata_latched[15:13] === "b100".U ){
+              if (!mem_rdata_latched[11] && !mem_rdata_latched[12]) begin // C.SRLI, C.SRAI
+                is_alu_reg_imm <= 1;
+                decoded_rd <= 8 + mem_rdata_latched[9:7];
+                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+                decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
+              end
+              if (mem_rdata_latched[11:10] == 2'b10) begin // C.ANDI
+                is_alu_reg_imm <= 1;
+                decoded_rd <= 8 + mem_rdata_latched[9:7];
+                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+              end
+              if (mem_rdata_latched[12:10] == 3'b011) begin // C.SUB, C.XOR, C.OR, C.AND
+                is_alu_reg_reg <= 1;
+                decoded_rd <= 8 + mem_rdata_latched[9:7];
+                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+                decoded_rs2 <= 8 + mem_rdata_latched[4:2];
+              end
+            } .elsewhen( mem_rdata_latched[15:13] === "b101".U ){ // C.J
+              instr_jal <= 1;
+            } .elsewhen( mem_rdata_latched[15:13] === "b110".U ){ // C.BEQZ
+              is_beq_bne_blt_bge_bltu_bgeu <= 1;
+              decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+              decoded_rs2 <= 0;
+            } .elsewhen( mem_rdata_latched[15:13] === "b111".U ){ // C.BNEZ
+              is_beq_bne_blt_bge_bltu_bgeu <= 1;
+              decoded_rs1 <= 8 + mem_rdata_latched[9:7];
+              decoded_rs2 <= 0;
+            }
+          } .elsewhen( mem_rdata_latched[1:0] === "b10".U){ // Quadrant 2
+            when(mem_rdata_latched[15:13] === "b000".U){// C.SLLI
+                if (!mem_rdata_latched[12]) begin
+                  is_alu_reg_imm <= 1;
+                  decoded_rd <= mem_rdata_latched[11:7];
+                  decoded_rs1 <= mem_rdata_latched[11:7];
+                  decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
+                end              
+            } .elsewhen(mem_rdata_latched[15:13] === "b010".U){// C.LWSP
+                if (mem_rdata_latched[11:7]) begin
+                  is_lb_lh_lw_lbu_lhu <= 1;
+                  decoded_rd <= mem_rdata_latched[11:7];
+                  decoded_rs1 <= 2;
+                end              
+            } .elsewhen(mem_rdata_latched[15:13] === "b100".U){
+                if (mem_rdata_latched[12] == 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JR
+                  instr_jalr <= 1;
+                  decoded_rd <= 0;
+                  decoded_rs1 <= mem_rdata_latched[11:7];
+                end
+                if (mem_rdata_latched[12] == 0 && mem_rdata_latched[6:2] != 0) begin // C.MV
+                  is_alu_reg_reg <= 1;
+                  decoded_rd <= mem_rdata_latched[11:7];
+                  decoded_rs1 <= 0;
+                  decoded_rs2 <= mem_rdata_latched[6:2];
+                end
+                if (mem_rdata_latched[12] != 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JALR
+                  instr_jalr <= 1;
+                  decoded_rd <= 1;
+                  decoded_rs1 <= mem_rdata_latched[11:7];
+                end
+                if (mem_rdata_latched[12] != 0 && mem_rdata_latched[6:2] != 0) begin // C.ADD
+                  is_alu_reg_reg <= 1;
+                  decoded_rd <= mem_rdata_latched[11:7];
+                  decoded_rs1 <= mem_rdata_latched[11:7];
+                  decoded_rs2 <= mem_rdata_latched[6:2];
+                end              
+            } .elsewhen(mem_rdata_latched[15:13] === "b110".U){// C.SWSP
+                is_sb_sh_sw <= 1;
+                decoded_rs1 <= 2;
+                decoded_rs2 <= mem_rdata_latched[6:2];
+            }
+          }         
+        }
+      }   
+    }
+
+
+
+
+
+
 
 		if (decoder_trigger && !decoder_pseudo_trigger) begin
+
 			pcpi_insn <= WITH_PCPI ? mem_rdata_q : 'bx;
 
 			instr_beq   <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b000;
@@ -1182,8 +1118,8 @@ module picorv32 #(
 				mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0100000
 			};
 
-			is_lui_auipc_jal_jalr_addi_add_sub <= 0;
-			is_compare <= 0;
+			
+
 
 			(* parallel_case *)
 			case (1'b1)
@@ -1202,38 +1138,139 @@ module picorv32 #(
 			endcase
 		end
 
-		if (!resetn) begin
-			is_beq_bne_blt_bge_bltu_bgeu <= 0;
-			is_compare <= 0;
 
-			instr_beq   <= 0;
-			instr_bne   <= 0;
-			instr_blt   <= 0;
-			instr_bge   <= 0;
-			instr_bltu  <= 0;
-			instr_bgeu  <= 0;
-
-			instr_addi  <= 0;
-			instr_slti  <= 0;
-			instr_sltiu <= 0;
-			instr_xori  <= 0;
-			instr_ori   <= 0;
-			instr_andi  <= 0;
-
-			instr_add   <= 0;
-			instr_sub   <= 0;
-			instr_sll   <= 0;
-			instr_slt   <= 0;
-			instr_sltu  <= 0;
-			instr_xor   <= 0;
-			instr_srl   <= 0;
-			instr_sra   <= 0;
-			instr_or    <= 0;
-			instr_and   <= 0;
-
-			instr_fence <= 0;
-		end
 	end
+
+
+
+}
+
+
+
+
+module picorv32 #(
+
+) (
+
+
+);
+
+
+
+
+// `ifndef PICORV32_REGS
+// 	reg [31:0] cpuregs [0:regfile_size-1];
+
+// 	integer i;
+// 	initial begin
+// 		if (REGS_INIT_ZERO) begin
+// 			for (i = 0; i < regfile_size; i = i+1)
+// 				cpuregs[i] = 0;
+// 		end
+// 	end
+// `endif
+
+// `ifdef DEBUGREGS
+// 	val dbg_reg_x0  = 0
+// 	val dbg_reg_x1  = cpuregs[1]
+// 	val dbg_reg_x2  = cpuregs[2]
+// 	val dbg_reg_x3  = cpuregs[3]
+// 	val dbg_reg_x4  = cpuregs[4]
+// 	val dbg_reg_x5  = cpuregs[5]
+// 	val dbg_reg_x6  = cpuregs[6]
+// 	val dbg_reg_x7  = cpuregs[7]
+// 	val dbg_reg_x8  = cpuregs[8]
+// 	val dbg_reg_x9  = cpuregs[9]
+// 	val dbg_reg_x10 = cpuregs[10]
+// 	val dbg_reg_x11 = cpuregs[11]
+// 	val dbg_reg_x12 = cpuregs[12]
+// 	val dbg_reg_x13 = cpuregs[13]
+// 	val dbg_reg_x14 = cpuregs[14]
+// 	val dbg_reg_x15 = cpuregs[15]
+// 	val dbg_reg_x16 = cpuregs[16]
+// 	val dbg_reg_x17 = cpuregs[17]
+// 	val dbg_reg_x18 = cpuregs[18]
+// 	val dbg_reg_x19 = cpuregs[19]
+// 	val dbg_reg_x20 = cpuregs[20]
+// 	val dbg_reg_x21 = cpuregs[21]
+// 	val dbg_reg_x22 = cpuregs[22]
+// 	val dbg_reg_x23 = cpuregs[23]
+// 	val dbg_reg_x24 = cpuregs[24]
+// 	val dbg_reg_x25 = cpuregs[25]
+// 	val dbg_reg_x26 = cpuregs[26]
+// 	val dbg_reg_x27 = cpuregs[27]
+// 	val dbg_reg_x28 = cpuregs[28]
+// 	val dbg_reg_x29 = cpuregs[29]
+// 	val dbg_reg_x30 = cpuregs[30]
+// 	val dbg_reg_x31 = cpuregs[31]
+// `endif
+
+
+
+	// reg [63:0] new_ascii_instr;
+
+
+	// always @* begin
+	// 	new_ascii_instr = "";
+
+	// 	if (instr_lui)      new_ascii_instr = "lui";
+	// 	if (instr_auipc)    new_ascii_instr = "auipc";
+	// 	if (instr_jal)      new_ascii_instr = "jal";
+	// 	if (instr_jalr)     new_ascii_instr = "jalr";
+
+	// 	if (instr_beq)      new_ascii_instr = "beq";
+	// 	if (instr_bne)      new_ascii_instr = "bne";
+	// 	if (instr_blt)      new_ascii_instr = "blt";
+	// 	if (instr_bge)      new_ascii_instr = "bge";
+	// 	if (instr_bltu)     new_ascii_instr = "bltu";
+	// 	if (instr_bgeu)     new_ascii_instr = "bgeu";
+
+	// 	if (instr_lb)       new_ascii_instr = "lb";
+	// 	if (instr_lh)       new_ascii_instr = "lh";
+	// 	if (instr_lw)       new_ascii_instr = "lw";
+	// 	if (instr_lbu)      new_ascii_instr = "lbu";
+	// 	if (instr_lhu)      new_ascii_instr = "lhu";
+	// 	if (instr_sb)       new_ascii_instr = "sb";
+	// 	if (instr_sh)       new_ascii_instr = "sh";
+	// 	if (instr_sw)       new_ascii_instr = "sw";
+
+	// 	if (instr_addi)     new_ascii_instr = "addi";
+	// 	if (instr_slti)     new_ascii_instr = "slti";
+	// 	if (instr_sltiu)    new_ascii_instr = "sltiu";
+	// 	if (instr_xori)     new_ascii_instr = "xori";
+	// 	if (instr_ori)      new_ascii_instr = "ori";
+	// 	if (instr_andi)     new_ascii_instr = "andi";
+	// 	if (instr_slli)     new_ascii_instr = "slli";
+	// 	if (instr_srli)     new_ascii_instr = "srli";
+	// 	if (instr_srai)     new_ascii_instr = "srai";
+
+	// 	if (instr_add)      new_ascii_instr = "add";
+	// 	if (instr_sub)      new_ascii_instr = "sub";
+	// 	if (instr_sll)      new_ascii_instr = "sll";
+	// 	if (instr_slt)      new_ascii_instr = "slt";
+	// 	if (instr_sltu)     new_ascii_instr = "sltu";
+	// 	if (instr_xor)      new_ascii_instr = "xor";
+	// 	if (instr_srl)      new_ascii_instr = "srl";
+	// 	if (instr_sra)      new_ascii_instr = "sra";
+	// 	if (instr_or)       new_ascii_instr = "or";
+	// 	if (instr_and)      new_ascii_instr = "and";
+
+	// 	if (instr_rdcycle)  new_ascii_instr = "rdcycle";
+	// 	if (instr_rdcycleh) new_ascii_instr = "rdcycleh";
+	// 	if (instr_rdinstr)  new_ascii_instr = "rdinstr";
+	// 	if (instr_rdinstrh) new_ascii_instr = "rdinstrh";
+	// 	if (instr_fence)    new_ascii_instr = "fence";
+
+	// 	if (instr_getq)     new_ascii_instr = "getq";
+	// 	if (instr_setq)     new_ascii_instr = "setq";
+	// 	if (instr_retirq)   new_ascii_instr = "retirq";
+	// 	if (instr_maskirq)  new_ascii_instr = "maskirq";
+	// 	if (instr_waitirq)  new_ascii_instr = "waitirq";
+	// 	if (instr_timer)    new_ascii_instr = "timer";
+	// end
+
+
+
 
 
 	// Main State Machine
@@ -2172,10 +2209,10 @@ module picorv32 #(
 `ifdef FORMAL
 	reg [3:0] last_mem_nowait;
 	always @(posedge clk)
-		last_mem_nowait <= {last_mem_nowait, mem_ready || !mem_valid};
+		last_mem_nowait <= {last_mem_nowait, io.mem.ready || !mem_valid};
 
 	// stall the memory interface for max 4 cycles
-	restrict property (|last_mem_nowait || mem_ready || !mem_valid);
+	restrict property (|last_mem_nowait || io.mem.ready || !mem_valid);
 
 	// resetn low in first cycle, after that resetn high
 	restrict property (resetn != $initstate);
@@ -2229,7 +2266,7 @@ module picorv32 #(
 			assert(mem_wstrb == last_mem_la_wstrb);
 		end
 		if (mem_la_read || mem_la_write) begin
-			assert(!mem_valid || mem_ready);
+			assert(!mem_valid || io.mem.ready);
 		end
 	end
 `endif
