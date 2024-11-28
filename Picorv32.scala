@@ -182,7 +182,6 @@ extends Module{
 
   val io: Picorv32IO = IO(new Picorv32IO)
 
-	val trap = Reg(Bool()); io.trap := trap
 	val mem_valid = RegInit(false.B); io.mem.valid     := mem_valid
 	val mem_instr = Reg(Bool()); io.mem.isInstr   := mem_instr
 	val mem_addr  = Reg(UInt(32.W)); io.mem.addr  := mem_addr
@@ -191,10 +190,10 @@ extends Module{
 
 
 
-	val pcpi_valid = Reg(Bool()); io.pcpi.valid := pcpi_valid
+	val pcpi_valid = RegInit(false.B); io.pcpi.valid := pcpi_valid
 	val pcpi_insn = Reg(UInt(32.W)); io.pcpi.insn := pcpi_insn
 
-	val eoi = Reg(UInt(32.W)); io.eoi := eoi
+	val eoi = RegInit(0.U(32.W)); io.eoi := eoi
 
 	val rvfi = Reg(new new Riscv_Format_Bundle); io.rvfi := rvfi
 
@@ -218,17 +217,19 @@ extends Module{
 	def TRACE_IRQ    = Cat( "b1000".U(4.W), 0.U(32.W) )
 
 
-  val count_cycle = Reg(UInt(64.W))
-  val count_instr = Reg(UInt(64.W))
+  val count_cycle = RegInit(0.U( (if(ENABLE_COUNTERS64){64} else{32}).W) )      
+  if (ENABLE_COUNTERS){
+    count_cycle := count_cycle + 1.U
+  }
 
-  val reg_pc = Reg(UInt(32.W))
-  val reg_next_pc = Reg(UInt(32.W))
+  val count_instr = RegInit(0.U(64.W))
+
+  val reg_pc      = RegInit(PROGADDR_RESET(32.W))
+  val reg_next_pc = RegInit(PROGADDR_RESET(32.W))
   val reg_op1 = Reg(UInt(32.W))
   val reg_op2 = Reg(UInt(32.W))
-  val reg_out = Reg(UInt(32.W))
+  val reg_out = if( ~STACKADDR ) { RegInit(STACKADDR(32.W)) } else { Reg(UInt(32.W)) }
   val reg_sh = Reg(UInt(5.W))
-
-
 
 
 
@@ -246,11 +247,11 @@ extends Module{
 
 	val next_pc = Wire(UInt(32.W))
 
-	val irq_delay = Reg(Bool())
-	val irq_active = Reg(Bool())
-	val irq_mask = Reg(UInt(32.W))
+	val irq_delay = RegInit(false.B)
+	val irq_active = RegInit(false.B)
+	val irq_mask = RegInit("hFFFFFFFF".U(32.W))
 	val irq_pending = Reg(UInt(32.W))
-	val timer = Reg(UInt(32.W))
+	val timer = RegInit(0.U(32.W))
 
 
 	// Internal PCPI Cores
@@ -415,7 +416,7 @@ extends Module{
 
 
 	val prefetched_high_word = RegInit(false.B)
-	reg clear_prefetched_high_word;
+	val clear_prefetched_high_word = Wire(Bool())
 	reg [15:0] mem_16bit_buffer;
 	reg [31:0] mem_rdata_q;
 
@@ -555,7 +556,7 @@ extends Module{
 
 
 
-  when(~reset & ~trap) {
+  when(~reset & ~io.trap) {
     when(mem_do_prefetch | mem_do_rinst | mem_do_rdata){
       assert(~mem_do_wdata)
     }
@@ -574,7 +575,7 @@ extends Module{
   }
 
 
-  when(trap){
+  when(io.trap){
     when(io.mem.ready){
       mem_valid := false.B
     }
@@ -760,19 +761,21 @@ extends Module{
   val decoded_rs1 = Reg(UInt(regindex_bits.W))
 	val decoded_rs2 = Reg(UInt(5.W))
 
-	reg [31:0] decoded_imm, decoded_imm_j;
-	reg decoder_trigger;
-	reg decoder_trigger_q;
-	reg decoder_pseudo_trigger;
-	reg decoder_pseudo_trigger_q;
+  val decoded_imm = Reg(UInt(32.W))
+  val decoded_imm_j = Reg(UInt(32.W))
+
+	val decoder_trigger  = Reg(Bool())
+	val decoder_trigger_q  = Reg(Bool())
+	val decoder_pseudo_trigger  = Reg(Bool())
+	val decoder_pseudo_trigger_q  = Reg(Bool())
 	val compressed_instr = Reg(Bool())
 
 	val is_lui_auipc_jal = RegNext(instr_lui | instr_auipc | instr_jal)
-	reg is_lb_lh_lw_lbu_lhu;
-	reg is_slli_srli_srai;
-	reg is_jalr_addi_slti_sltiu_xori_ori_andi;
-	reg is_sb_sh_sw;
-	reg is_sll_srl_sra;
+	val is_lb_lh_lw_lbu_lhu = Reg(Bool())
+	val is_slli_srli_srai = Reg(Bool())
+	val is_jalr_addi_slti_sltiu_xori_ori_andi = Reg(Bool())
+	val is_sb_sh_sw = Reg(Bool())
+	val is_sll_srl_sra = Reg(Bool())
 	val is_lui_auipc_jal_jalr_addi_add_sub = RegNext( Mux( decoder_trigger & ~decoder_pseudo_trigger, false.B, instr_lui | instr_auipc | instr_jal | instr_jalr | instr_addi | instr_add | instr_sub ) )
 	val is_slti_blt_slt = RegNext(instr_slti | instr_blt | instr_slt)
 	val is_sltiu_bltu_sltu = RegNext(instr_sltiu | instr_bltu | instr_sltu)
@@ -782,8 +785,8 @@ extends Module{
 	val is_lbu_lhu_lw = RegNext(instr_lbu | instr_lhu | instr_lw)
 
 
-	reg is_alu_reg_imm;
-	reg is_alu_reg_reg;
+	val is_alu_reg_imm = Reg(Bool())
+	val is_alu_reg_reg = Reg(Bool())
 	val is_compare = RegNext( Mux( decoder_trigger & ~decoder_pseudo_trigger, false.B, is_beq_bne_blt_bge_bltu_bgeu | instr_slti | instr_slt | instr_sltiu | instr_sltu) , false.B)
 
 	val instr_trap =
@@ -828,7 +831,7 @@ extends Module{
 	val launch_next_insn = Wire(Bool())
 	val dbg_valid_insn = RegInit(false.B)
 
-	when(trap){
+	when(io.trap){
 		dbg_valid_insn := false.B
   } .elsewhen(launch_next_insn){
 		dbg_valid_insn := true.B
@@ -869,405 +872,327 @@ extends Module{
   }
 `endif
 
-	always @(posedge clk) begin
-		when(mem_do_rinst && mem_done){
-			instr_lui     := mem_rdata_latched(6,0) === "b0110111".U
-			instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
-			instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
-			instr_jalr    := mem_rdata_latched(6,0) === "b1100111".U & mem_rdata_latched(14,12) === "b000".U
-			instr_retirq  := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U} else {false.B}
-			instr_waitirq := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000100".U} else {false.B}
+  when(mem_do_rinst && mem_done){
+    instr_lui     := mem_rdata_latched(6,0) === "b0110111".U
+    instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
+    instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
+    instr_jalr    := mem_rdata_latched(6,0) === "b1100111".U & mem_rdata_latched(14,12) === "b000".U
+    instr_retirq  := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U} else {false.B}
+    instr_waitirq := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000100".U} else {false.B}
 
-			is_beq_bne_blt_bge_bltu_bgeu := mem_rdata_latched(6,0) === "b1100011".U
-			is_lb_lh_lw_lbu_lhu          := mem_rdata_latched(6,0) === "b0000011".U
-			is_sb_sh_sw                  := mem_rdata_latched(6,0) === "b0100011".U
-			is_alu_reg_imm               := mem_rdata_latched(6,0) === "b0010011".U
-			is_alu_reg_reg               := mem_rdata_latched(6,0) === "b0110011".U
+    is_beq_bne_blt_bge_bltu_bgeu := mem_rdata_latched(6,0) === "b1100011".U
+    is_lb_lh_lw_lbu_lhu          := mem_rdata_latched(6,0) === "b0000011".U
+    is_sb_sh_sw                  := mem_rdata_latched(6,0) === "b0100011".U
+    is_alu_reg_imm               := mem_rdata_latched(6,0) === "b0010011".U
+    is_alu_reg_reg               := mem_rdata_latched(6,0) === "b0110011".U
 
-			{ decoded_imm_j[31:20], decoded_imm_j[10:1], decoded_imm_j[11], decoded_imm_j[19:12], decoded_imm_j[0] } <= $signed({mem_rdata_latched[31:12], 1'b0});
-
-			decoded_rd  := mem_rdata_latched(11,7)
-			decoded_rs1 := mem_rdata_latched(19,15)
-			decoded_rs2 := mem_rdata_latched(24,20)
-
-      if(ENABLE_IRQ && ENABLE_IRQ_QREGS){
-        when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000000".U ){
-          decoded_rs1 := Cat( 1.U(1.W), mem_rdata_latched(19,15) ) // instr_getq
-        }        
-      }
-
-      if(ENABLE_IRQ){
-        when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U ){
-          decoded_rs1 := if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}; // instr_retirq
-        }
-
-      }
-
-
-			compressed_instr := 
-        if (COMPRESSED_ISA){ mem_rdata_latched(1,0) =/= "b11".U } else { false.B }
-
-
-
-			if (COMPRESSED_ISA){
-        when(mem_rdata_latched(1,0) =/= "b11".U){
-          decoded_rd  := 0.U
-          decoded_rs1 := 0.U
-          decoded_rs2 := 0.U
-
-          { decoded_imm_j[31:11], decoded_imm_j[4], decoded_imm_j[9:8], decoded_imm_j[10], decoded_imm_j[6],
-            decoded_imm_j[7], decoded_imm_j[3:1], decoded_imm_j[5], decoded_imm_j[0] } <= $signed({mem_rdata_latched[12:2], 1'b0});
-
-          when( mem_rdata_latched[1:0] === "b00".U){ // Quadrant 0
-            when(mem_rdata_latched[15:13] === "b000".U){ // C.ADDI4SPN
-                is_alu_reg_imm <= |mem_rdata_latched[12:5];
-                decoded_rs1 <= 2;
-                decoded_rd <= 8 + mem_rdata_latched[4:2];              
-            } .elsewhen(mem_rdata_latched[15:13] === "b010".U){// C.LW
-                is_lb_lh_lw_lbu_lhu <= 1;
-                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-                decoded_rd <= 8 + mem_rdata_latched[4:2];
-            } .elsewhen(mem_rdata_latched[15:13] === "b110".U){// C.SW
-                is_sb_sh_sw <= 1;
-                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-                decoded_rs2 <= 8 + mem_rdata_latched[4:2];
-            }           
-          } .elsewhen( mem_rdata_latched[1:0] === "b01".U){ // Quadrant 1
-            when(mem_rdata_latched[15:13] === "b000".U){ // C.NOP / C.ADDI
-                is_alu_reg_imm <= 1;
-                decoded_rd <= mem_rdata_latched[11:7];
-                decoded_rs1 <= mem_rdata_latched[11:7];              
-            } .elsewhen( mem_rdata_latched[15:13] === "b001".U ){ // C.JAL
-                instr_jal <= 1;
-                decoded_rd <= 1;              
-            } .elsewhen( mem_rdata_latched[15:13] === "b010".U ){ // C.LI
-                is_alu_reg_imm <= 1;
-                decoded_rd <= mem_rdata_latched[11:7];
-                decoded_rs1 <= 0;
-            } .elsewhen( mem_rdata_latched[15:13] === "b011".U ){
-                if (mem_rdata_latched[12] || mem_rdata_latched[6:2]) begin
-                  if (mem_rdata_latched[11:7] == 2) begin // C.ADDI16SP
-                    is_alu_reg_imm <= 1;
-                    decoded_rd <= mem_rdata_latched[11:7];
-                    decoded_rs1 <= mem_rdata_latched[11:7];
-                  end else begin // C.LUI
-                    instr_lui <= 1;
-                    decoded_rd <= mem_rdata_latched[11:7];
-                    decoded_rs1 <= 0;
-                  end
-                end
-            } .elsewhen( mem_rdata_latched[15:13] === "b100".U ){
-              if (!mem_rdata_latched[11] && !mem_rdata_latched[12]) begin // C.SRLI, C.SRAI
-                is_alu_reg_imm <= 1;
-                decoded_rd <= 8 + mem_rdata_latched[9:7];
-                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-                decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
-              end
-              if (mem_rdata_latched[11:10] == 2'b10) begin // C.ANDI
-                is_alu_reg_imm <= 1;
-                decoded_rd <= 8 + mem_rdata_latched[9:7];
-                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-              end
-              if (mem_rdata_latched[12:10] == 3'b011) begin // C.SUB, C.XOR, C.OR, C.AND
-                is_alu_reg_reg <= 1;
-                decoded_rd <= 8 + mem_rdata_latched[9:7];
-                decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-                decoded_rs2 <= 8 + mem_rdata_latched[4:2];
-              end
-            } .elsewhen( mem_rdata_latched[15:13] === "b101".U ){ // C.J
-              instr_jal <= 1;
-            } .elsewhen( mem_rdata_latched[15:13] === "b110".U ){ // C.BEQZ
-              is_beq_bne_blt_bge_bltu_bgeu <= 1;
-              decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-              decoded_rs2 <= 0;
-            } .elsewhen( mem_rdata_latched[15:13] === "b111".U ){ // C.BNEZ
-              is_beq_bne_blt_bge_bltu_bgeu <= 1;
-              decoded_rs1 <= 8 + mem_rdata_latched[9:7];
-              decoded_rs2 <= 0;
-            }
-          } .elsewhen( mem_rdata_latched[1:0] === "b10".U){ // Quadrant 2
-            when(mem_rdata_latched[15:13] === "b000".U){// C.SLLI
-                if (!mem_rdata_latched[12]) begin
-                  is_alu_reg_imm <= 1;
-                  decoded_rd <= mem_rdata_latched[11:7];
-                  decoded_rs1 <= mem_rdata_latched[11:7];
-                  decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
-                end              
-            } .elsewhen(mem_rdata_latched[15:13] === "b010".U){// C.LWSP
-                if (mem_rdata_latched[11:7]) begin
-                  is_lb_lh_lw_lbu_lhu <= 1;
-                  decoded_rd <= mem_rdata_latched[11:7];
-                  decoded_rs1 <= 2;
-                end              
-            } .elsewhen(mem_rdata_latched[15:13] === "b100".U){
-                if (mem_rdata_latched[12] == 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JR
-                  instr_jalr <= 1;
-                  decoded_rd <= 0;
-                  decoded_rs1 <= mem_rdata_latched[11:7];
-                end
-                if (mem_rdata_latched[12] == 0 && mem_rdata_latched[6:2] != 0) begin // C.MV
-                  is_alu_reg_reg <= 1;
-                  decoded_rd <= mem_rdata_latched[11:7];
-                  decoded_rs1 <= 0;
-                  decoded_rs2 <= mem_rdata_latched[6:2];
-                end
-                if (mem_rdata_latched[12] != 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JALR
-                  instr_jalr <= 1;
-                  decoded_rd <= 1;
-                  decoded_rs1 <= mem_rdata_latched[11:7];
-                end
-                if (mem_rdata_latched[12] != 0 && mem_rdata_latched[6:2] != 0) begin // C.ADD
-                  is_alu_reg_reg <= 1;
-                  decoded_rd <= mem_rdata_latched[11:7];
-                  decoded_rs1 <= mem_rdata_latched[11:7];
-                  decoded_rs2 <= mem_rdata_latched[6:2];
-                end              
-            } .elsewhen(mem_rdata_latched[15:13] === "b110".U){// C.SWSP
-                is_sb_sh_sw <= 1;
-                decoded_rs1 <= 2;
-                decoded_rs2 <= mem_rdata_latched[6:2];
-            }
-          }         
-        }
-      }   
+    {
+      val temp = Cat( Fill(11, mem_rdata_latched.extract(31) ) ,mem_rdata_latched(31:12), 0.U(1.W) )
+      decoded_imm_j := Cat( temp(31,20), temp(8,1), temp.extract(9), temp(19,10), temp.extract(0) )
     }
 
 
+    decoded_rd  := mem_rdata_latched(11,7)
+    decoded_rs1 := mem_rdata_latched(19,15)
+    decoded_rs2 := mem_rdata_latched(24,20)
+
+    if(ENABLE_IRQ && ENABLE_IRQ_QREGS){
+      when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000000".U ){
+        decoded_rs1 := Cat( 1.U(1.W), mem_rdata_latched(19,15) ) // instr_getq
+      }        
+    }
+
+    if(ENABLE_IRQ){
+      when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U ){
+        decoded_rs1 := if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}; // instr_retirq
+      }
+
+    }
+
+
+    compressed_instr := 
+      if (COMPRESSED_ISA){ mem_rdata_latched(1,0) =/= "b11".U } else { false.B }
+
+
+
+    if (COMPRESSED_ISA){
+      when(mem_rdata_latched(1,0) =/= "b11".U){
+        decoded_rd  := 0.U
+        decoded_rs1 := 0.U
+        decoded_rs2 := 0.U
+
+        { decoded_imm_j[31:11], decoded_imm_j[4], decoded_imm_j[9:8], decoded_imm_j[10], decoded_imm_j[6],
+          decoded_imm_j[7], decoded_imm_j[3:1], decoded_imm_j[5], decoded_imm_j[0] } <= $signed({mem_rdata_latched[12:2], 1'b0});
+
+        when( mem_rdata_latched(1,0) === "b00".U){ // Quadrant 0
+          when(mem_rdata_latched(15,13) === "b000".U){ // C.ADDI4SPN
+            is_alu_reg_imm := mem_rdata_latched(12,5).orR
+            decoded_rs1 := 2.U
+            decoded_rd := 8.U + mem_rdata_latched(4,2)
+          } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LW
+            is_lb_lh_lw_lbu_lhu := 1.U
+            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
+            decoded_rd  := 8.U + mem_rdata_latched(4,2)
+          } .elsewhen(mem_rdata_latched(15,13) === "b110".U){ // C.SW
+            is_sb_sh_sw := 1.U
+            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
+            decoded_rs2 := 8.U + mem_rdata_latched(4,2)
+          }           
+        } .elsewhen( mem_rdata_latched(1,0) === "b01".U){ // Quadrant 1
+          when(mem_rdata_latched(15,13) === "b000".U){ // C.NOP / C.ADDI
+            is_alu_reg_imm := 1.U
+            decoded_rd  := mem_rdata_latched(11,7)
+            decoded_rs1 := mem_rdata_latched(11,7)
+          } .elsewhen( mem_rdata_latched(15,13) === "b001".U ){ // C.JAL
+            instr_jal  := 1.U
+            decoded_rd := 1.U
+          } .elsewhen( mem_rdata_latched(15,13) === "b010".U ){ // C.LI
+            is_alu_reg_imm := 1.U
+            decoded_rd  := mem_rdata_latched(11,7)
+            decoded_rs1 := 0.U
+          } .elsewhen( mem_rdata_latched(15,13) === "b011".U ){
+            when(mem_rdata_latched.extract(12) | mem_rdata_latched(6,2) ){
+              when(mem_rdata_latched[11:7] == 2){ // C.ADDI16SP
+                is_alu_reg_imm := 1.U
+                decoded_rd     := mem_rdata_latched(11,7)
+                decoded_rs1    := mem_rdata_latched(11,7)
+              } .otherwise{ // C.LUI
+                instr_lui   := 1.U
+                decoded_rd  := mem_rdata_latched(11,7)
+                decoded_rs1 := 0.U
+              }                
+            }
+          } .elsewhen( mem_rdata_latched(15,13) === "b100".U ){
+            when( ~mem_rdata_latched.extract(11) & ~mem_rdata_latched.extract(12) ){ // C.SRLI, C.SRAI
+              is_alu_reg_imm := 1.U
+              decoded_rd  := 8.U + mem_rdata_latched(9,7)
+              decoded_rs1 := 8.U + mem_rdata_latched(9,7)
+              decoded_rs2 := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2))
+            }
+            when(mem_rdata_latched(11,10) === "b10".U){ // C.ANDI
+              is_alu_reg_imm := 1.U
+              decoded_rd     := 8.U + mem_rdata_latched(9,7)
+              decoded_rs1    := 8.U + mem_rdata_latched(9,7)
+            }
+            when(mem_rdata_latched(12,10) === "b011".U){ // C.SUB, C.XOR, C.OR, C.AND
+              is_alu_reg_reg := 1.U
+              decoded_rd     := 8.U + mem_rdata_latched(9,7)
+              decoded_rs1    := 8.U + mem_rdata_latched(9,7)
+              decoded_rs2    := 8.U + mem_rdata_latched(4,2)
+            }
+          } .elsewhen( mem_rdata_latched(15,13) === "b101".U ){ // C.J
+            instr_jal := 1.U
+          } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){ // C.BEQZ
+            is_beq_bne_blt_bge_bltu_bgeu := 1.U
+            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
+            decoded_rs2 := 0.U
+          } .elsewhen( mem_rdata_latched(15,13) === "b111".U ){ // C.BNEZ
+            is_beq_bne_blt_bge_bltu_bgeu := 1.U
+            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
+            decoded_rs2 := 0.U
+          }
+        } .elsewhen( mem_rdata_latched(1,0) === "b10".U){ // Quadrant 2
+          when(mem_rdata_latched(15,13) === "b000".U){ // C.SLLI
+            when( ~mem_rdata_latched.extract(12) ){
+              is_alu_reg_imm := 1.U
+              decoded_rd  := mem_rdata_latched(11,7)
+              decoded_rs1 := mem_rdata_latched(11,7)
+              decoded_rs2 := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2))
+            }            
+          } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LWSP
+            when(mem_rdata_latched(11,7)){
+              is_lb_lh_lw_lbu_lhu := 1.U
+              decoded_rd  := mem_rdata_latched(11,7)
+              decoded_rs1 := 2.U
+            }             
+          } .elsewhen(mem_rdata_latched(15,13) === "b100".U){
+            when( mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
+              instr_jalr  := 1.U
+              decoded_rd  := 0.U
+              decoded_rs1 := mem_rdata_latched(11,7)
+            }
+            when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
+              is_alu_reg_reg := 1.U
+              decoded_rd  := mem_rdata_latched(11,7)
+              decoded_rs1 := 0.U
+              decoded_rs2 := mem_rdata_latched(6,2)
+            }
+            when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
+              instr_jalr  := 1.U
+              decoded_rd  := 1.U
+              decoded_rs1 := mem_rdata_latched(11,7)
+            }
+            when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0){ // C.ADD
+              is_alu_reg_reg := 1.U
+              decoded_rd  := mem_rdata_latched(11,7)
+              decoded_rs1 := mem_rdata_latched(11,7)
+              decoded_rs2 := mem_rdata_latched(6,2)
+            }        
+          } .elsewhen(mem_rdata_latched(15,13) === "b110".U){// C.SWSP
+              is_sb_sh_sw := 1.U
+              decoded_rs1 := 2.U
+              decoded_rs2 := mem_rdata_latched(6,2)
+          }
+        }         
+      }
+    }   
+  }
+
+  when(decoder_trigger && !decoder_pseudo_trigger){
+    pcpi_insn := if(WITH_PCPI) {mem_rdata_q} else {0.U}
+
+    instr_beq   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b000".U
+    instr_bne   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b001".U
+    instr_blt   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b100".U
+    instr_bge   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b101".U
+    instr_bltu  := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b110".U
+    instr_bgeu  := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b111".U
+
+    instr_lb    := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b000".U
+    instr_lh    := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b001".U
+    instr_lw    := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b010".U
+    instr_lbu   := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b100".U
+    instr_lhu   := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b101".U
+
+    instr_sb    := is_sb_sh_sw & mem_rdata_q(14,12) === "b000".U
+    instr_sh    := is_sb_sh_sw & mem_rdata_q(14,12) === "b001".U
+    instr_sw    := is_sb_sh_sw & mem_rdata_q(14,12) === "b010".U
+
+    instr_addi  := is_alu_reg_imm & mem_rdata_q(14,12) === "b000".U
+    instr_slti  := is_alu_reg_imm & mem_rdata_q(14,12) === "b010".U
+    instr_sltiu := is_alu_reg_imm & mem_rdata_q(14,12) === "b011".U
+    instr_xori  := is_alu_reg_imm & mem_rdata_q(14,12) === "b100".U
+    instr_ori   := is_alu_reg_imm & mem_rdata_q(14,12) === "b110".U
+    instr_andi  := is_alu_reg_imm & mem_rdata_q(14,12) === "b111".U
+
+    instr_slli  := is_alu_reg_imm & mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_srli  := is_alu_reg_imm & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_srai  := is_alu_reg_imm & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U
+
+    instr_add   := is_alu_reg_reg & mem_rdata_q(14,12) === "b000".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_sub   := is_alu_reg_reg & mem_rdata_q(14,12) === "b000".U & mem_rdata_q(31,25) === "b0100000".U
+    instr_sll   := is_alu_reg_reg & mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_slt   := is_alu_reg_reg & mem_rdata_q(14,12) === "b010".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_sltu  := is_alu_reg_reg & mem_rdata_q(14,12) === "b011".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_xor   := is_alu_reg_reg & mem_rdata_q(14,12) === "b100".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_srl   := is_alu_reg_reg & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_sra   := is_alu_reg_reg & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U
+    instr_or    := is_alu_reg_reg & mem_rdata_q(14,12) === "b110".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_and   := is_alu_reg_reg & mem_rdata_q(14,12) === "b111".U & mem_rdata_q(31,25) === "b0000000".U
+
+    if( ENABLE_COUNTERS ){
+      instr_rdcycle := 
+        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11000000000000000010".U) |
+        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11000000000100000010".U)
+      instr_rdinstr := mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11000000001000000010".U
+    } else {
+      instr_rdcycle  := false.B
+      instr_rdinstr  := false.B
+    }
+
+    if( ENABLE_COUNTERS & ENABLE_COUNTERS64 ){
+      instr_rdcycleh :=
+        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11001000000000000010".U) |
+        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11001000000100000010".U)
+      instr_rdinstrh := mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11001000001000000010".U
+    } else {
+      instr_rdcycleh := false.B
+      instr_rdinstrh := false.B  
+    }
+
+    instr_ecall_ebreak := 
+      (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,21) === 0.U & mem_rdata_q(19,7) === 0.U) |
+      ( if(COMPRESSED_ISA) {mem_rdata_q(15,0) === "h9002".U} else {false.B})
+
+    instr_fence := mem_rdata_q(6,0) === "b0001111".U & mem_rdata_q(14,12) === 0.U
+
+    if( ENABLE_IRQ ){
+      instr_maskirq := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000011".U
+    } else {
+      instr_maskirq := false.B
+    }
+
+    if( ENABLE_IRQ & ENABLE_IRQ_QREGS ){
+      instr_getq    := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000000".U
+      instr_setq    := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000001".U
+      instr_timer   := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000101".U
+    } else {
+      instr_getq    := false.B
+      instr_setq    := false.B
+      instr_timer   := false.B
+    }
+
+
+    is_slli_srli_srai := is_alu_reg_imm & (
+      ( mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U ) |
+      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U ) |
+      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U )
+    )
+
+
+    is_jalr_addi_slti_sltiu_xori_ori_andi := instr_jalr | (
+      is_alu_reg_imm & (
+        ( mem_rdata_q(14,12) === "b000".U ) |
+        ( mem_rdata_q(14,12) === "b010".U ) |
+        ( mem_rdata_q(14,12) === "b011".U ) |
+        ( mem_rdata_q(14,12) === "b100".U ) |
+        ( mem_rdata_q(14,12) === "b110".U ) |
+        ( mem_rdata_q(14,12) === "b111".U )        
+      )
+    )
+
+    is_sll_srl_sra := is_alu_reg_reg & (
+      ( mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U ) |
+      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U ) |
+      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U )        
+    )
+
+    decoded_imm := Mux1H(Seq(
+      instr_jal                                           -> decoded_imm_j,
+      (instr_lui | instr_auipc)                           -> mem_rdata_q(31,12) << 12,
+      (instr_jalr | is_lb_lh_lw_lbu_lhu | is_alu_reg_imm) -> Cat( Fill( 20, mem_rdata_q.extract(31)), mem_rdata_q(31,20) ),
+      is_beq_bne_blt_bge_bltu_bgeu                        -> Cat( Fill( 19, mem_rdata_q.extract(31)), mem_rdata_q.extract(31), mem_rdata_q.extract(7), mem_rdata_q[30:25], mem_rdata_q[11:8], 0.U(1.W)),
+      is_sb_sh_sw                                         -> Cat( Fill( 20, mem_rdata_q.extract(31)), mem_rdata_q(31,25), mem_rdata_q(11,7)),
+    ))
+  }
 
 
 
 
 
-		if (decoder_trigger && !decoder_pseudo_trigger) begin
-
-			pcpi_insn <= WITH_PCPI ? mem_rdata_q : 'bx;
-
-			instr_beq   <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b000;
-			instr_bne   <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b001;
-			instr_blt   <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b100;
-			instr_bge   <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b101;
-			instr_bltu  <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b110;
-			instr_bgeu  <= is_beq_bne_blt_bge_bltu_bgeu && mem_rdata_q[14:12] == 3'b111;
-
-			instr_lb    <= is_lb_lh_lw_lbu_lhu && mem_rdata_q[14:12] == 3'b000;
-			instr_lh    <= is_lb_lh_lw_lbu_lhu && mem_rdata_q[14:12] == 3'b001;
-			instr_lw    <= is_lb_lh_lw_lbu_lhu && mem_rdata_q[14:12] == 3'b010;
-			instr_lbu   <= is_lb_lh_lw_lbu_lhu && mem_rdata_q[14:12] == 3'b100;
-			instr_lhu   <= is_lb_lh_lw_lbu_lhu && mem_rdata_q[14:12] == 3'b101;
-
-			instr_sb    <= is_sb_sh_sw && mem_rdata_q[14:12] == 3'b000;
-			instr_sh    <= is_sb_sh_sw && mem_rdata_q[14:12] == 3'b001;
-			instr_sw    <= is_sb_sh_sw && mem_rdata_q[14:12] == 3'b010;
-
-			instr_addi  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b000;
-			instr_slti  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b010;
-			instr_sltiu <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b011;
-			instr_xori  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b100;
-			instr_ori   <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b110;
-			instr_andi  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b111;
-
-			instr_slli  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_srli  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_srai  <= is_alu_reg_imm && mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0100000;
-
-			instr_add   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b000 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_sub   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b000 && mem_rdata_q[31:25] == 7'b0100000;
-			instr_sll   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_slt   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b010 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_sltu  <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b011 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_xor   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b100 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_srl   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_sra   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0100000;
-			instr_or    <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b110 && mem_rdata_q[31:25] == 7'b0000000;
-			instr_and   <= is_alu_reg_reg && mem_rdata_q[14:12] == 3'b111 && mem_rdata_q[31:25] == 7'b0000000;
-
-			instr_rdcycle  <= ((mem_rdata_q[6:0] == 7'b1110011 && mem_rdata_q[31:12] == 'b11000000000000000010) ||
-			                   (mem_rdata_q[6:0] == 7'b1110011 && mem_rdata_q[31:12] == 'b11000000000100000010)) && ENABLE_COUNTERS;
-			instr_rdcycleh <= ((mem_rdata_q[6:0] == 7'b1110011 && mem_rdata_q[31:12] == 'b11001000000000000010) ||
-			                   (mem_rdata_q[6:0] == 7'b1110011 && mem_rdata_q[31:12] == 'b11001000000100000010)) && ENABLE_COUNTERS && ENABLE_COUNTERS64;
-			instr_rdinstr  <=  (mem_rdata_q[6:0] == 7'b1110011 && mem_rdata_q[31:12] == 'b11000000001000000010) && ENABLE_COUNTERS;
-			instr_rdinstrh <=  (mem_rdata_q[6:0] == 7'b1110011 && mem_rdata_q[31:12] == 'b11001000001000000010) && ENABLE_COUNTERS && ENABLE_COUNTERS64;
-
-			instr_ecall_ebreak <= ((mem_rdata_q[6:0] == 7'b1110011 && !mem_rdata_q[31:21] && !mem_rdata_q[19:7]) ||
-					(COMPRESSED_ISA && mem_rdata_q[15:0] == 16'h9002));
-			instr_fence <= (mem_rdata_q[6:0] == 7'b0001111 && !mem_rdata_q[14:12]);
-
-			instr_getq    <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000000 && ENABLE_IRQ && ENABLE_IRQ_QREGS;
-			instr_setq    <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000001 && ENABLE_IRQ && ENABLE_IRQ_QREGS;
-			instr_maskirq <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000011 && ENABLE_IRQ;
-			instr_timer   <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000101 && ENABLE_IRQ && ENABLE_IRQ_TIMER;
-
-			is_slli_srli_srai <= is_alu_reg_imm && |{
-				mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000,
-				mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0000000,
-				mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0100000
-			};
-
-			is_jalr_addi_slti_sltiu_xori_ori_andi <= instr_jalr || is_alu_reg_imm && |{
-				mem_rdata_q[14:12] == 3'b000,
-				mem_rdata_q[14:12] == 3'b010,
-				mem_rdata_q[14:12] == 3'b011,
-				mem_rdata_q[14:12] == 3'b100,
-				mem_rdata_q[14:12] == 3'b110,
-				mem_rdata_q[14:12] == 3'b111
-			};
-
-			is_sll_srl_sra <= is_alu_reg_reg && |{
-				mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000,
-				mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0000000,
-				mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0100000
-			};
-
-			
-
-
-			(* parallel_case *)
-			case (1'b1)
-				instr_jal:
-					decoded_imm <= decoded_imm_j;
-				|{instr_lui, instr_auipc}:
-					decoded_imm <= mem_rdata_q[31:12] << 12;
-				|{instr_jalr, is_lb_lh_lw_lbu_lhu, is_alu_reg_imm}:
-					decoded_imm <= $signed(mem_rdata_q[31:20]);
-				is_beq_bne_blt_bge_bltu_bgeu:
-					decoded_imm <= $signed({mem_rdata_q[31], mem_rdata_q[7], mem_rdata_q[30:25], mem_rdata_q[11:8], 1'b0});
-				is_sb_sh_sw:
-					decoded_imm <= $signed({mem_rdata_q[31:25], mem_rdata_q[11:7]});
-				default:
-					decoded_imm <= 1'bx;
-			endcase
-		end
-
-
-	end
-
-
-
-}
 
 
 
 
-module picorv32 #(
-
-) (
-
-
-);
 
 
 
 
-// `ifndef PICORV32_REGS
-// 	reg [31:0] cpuregs [0:regfile_size-1];
-
-// 	integer i;
-// 	initial begin
-// 		if (REGS_INIT_ZERO) begin
-// 			for (i = 0; i < regfile_size; i = i+1)
-// 				cpuregs[i] = 0;
-// 		end
-// 	end
-// `endif
-
-// `ifdef DEBUGREGS
-// 	val dbg_reg_x0  = 0
-// 	val dbg_reg_x1  = cpuregs[1]
-// 	val dbg_reg_x2  = cpuregs[2]
-// 	val dbg_reg_x3  = cpuregs[3]
-// 	val dbg_reg_x4  = cpuregs[4]
-// 	val dbg_reg_x5  = cpuregs[5]
-// 	val dbg_reg_x6  = cpuregs[6]
-// 	val dbg_reg_x7  = cpuregs[7]
-// 	val dbg_reg_x8  = cpuregs[8]
-// 	val dbg_reg_x9  = cpuregs[9]
-// 	val dbg_reg_x10 = cpuregs[10]
-// 	val dbg_reg_x11 = cpuregs[11]
-// 	val dbg_reg_x12 = cpuregs[12]
-// 	val dbg_reg_x13 = cpuregs[13]
-// 	val dbg_reg_x14 = cpuregs[14]
-// 	val dbg_reg_x15 = cpuregs[15]
-// 	val dbg_reg_x16 = cpuregs[16]
-// 	val dbg_reg_x17 = cpuregs[17]
-// 	val dbg_reg_x18 = cpuregs[18]
-// 	val dbg_reg_x19 = cpuregs[19]
-// 	val dbg_reg_x20 = cpuregs[20]
-// 	val dbg_reg_x21 = cpuregs[21]
-// 	val dbg_reg_x22 = cpuregs[22]
-// 	val dbg_reg_x23 = cpuregs[23]
-// 	val dbg_reg_x24 = cpuregs[24]
-// 	val dbg_reg_x25 = cpuregs[25]
-// 	val dbg_reg_x26 = cpuregs[26]
-// 	val dbg_reg_x27 = cpuregs[27]
-// 	val dbg_reg_x28 = cpuregs[28]
-// 	val dbg_reg_x29 = cpuregs[29]
-// 	val dbg_reg_x30 = cpuregs[30]
-// 	val dbg_reg_x31 = cpuregs[31]
-// `endif
 
 
 
-	// reg [63:0] new_ascii_instr;
 
 
-	// always @* begin
-	// 	new_ascii_instr = "";
 
-	// 	if (instr_lui)      new_ascii_instr = "lui";
-	// 	if (instr_auipc)    new_ascii_instr = "auipc";
-	// 	if (instr_jal)      new_ascii_instr = "jal";
-	// 	if (instr_jalr)     new_ascii_instr = "jalr";
 
-	// 	if (instr_beq)      new_ascii_instr = "beq";
-	// 	if (instr_bne)      new_ascii_instr = "bne";
-	// 	if (instr_blt)      new_ascii_instr = "blt";
-	// 	if (instr_bge)      new_ascii_instr = "bge";
-	// 	if (instr_bltu)     new_ascii_instr = "bltu";
-	// 	if (instr_bgeu)     new_ascii_instr = "bgeu";
 
-	// 	if (instr_lb)       new_ascii_instr = "lb";
-	// 	if (instr_lh)       new_ascii_instr = "lh";
-	// 	if (instr_lw)       new_ascii_instr = "lw";
-	// 	if (instr_lbu)      new_ascii_instr = "lbu";
-	// 	if (instr_lhu)      new_ascii_instr = "lhu";
-	// 	if (instr_sb)       new_ascii_instr = "sb";
-	// 	if (instr_sh)       new_ascii_instr = "sh";
-	// 	if (instr_sw)       new_ascii_instr = "sw";
 
-	// 	if (instr_addi)     new_ascii_instr = "addi";
-	// 	if (instr_slti)     new_ascii_instr = "slti";
-	// 	if (instr_sltiu)    new_ascii_instr = "sltiu";
-	// 	if (instr_xori)     new_ascii_instr = "xori";
-	// 	if (instr_ori)      new_ascii_instr = "ori";
-	// 	if (instr_andi)     new_ascii_instr = "andi";
-	// 	if (instr_slli)     new_ascii_instr = "slli";
-	// 	if (instr_srli)     new_ascii_instr = "srli";
-	// 	if (instr_srai)     new_ascii_instr = "srai";
 
-	// 	if (instr_add)      new_ascii_instr = "add";
-	// 	if (instr_sub)      new_ascii_instr = "sub";
-	// 	if (instr_sll)      new_ascii_instr = "sll";
-	// 	if (instr_slt)      new_ascii_instr = "slt";
-	// 	if (instr_sltu)     new_ascii_instr = "sltu";
-	// 	if (instr_xor)      new_ascii_instr = "xor";
-	// 	if (instr_srl)      new_ascii_instr = "srl";
-	// 	if (instr_sra)      new_ascii_instr = "sra";
-	// 	if (instr_or)       new_ascii_instr = "or";
-	// 	if (instr_and)      new_ascii_instr = "and";
 
-	// 	if (instr_rdcycle)  new_ascii_instr = "rdcycle";
-	// 	if (instr_rdcycleh) new_ascii_instr = "rdcycleh";
-	// 	if (instr_rdinstr)  new_ascii_instr = "rdinstr";
-	// 	if (instr_rdinstrh) new_ascii_instr = "rdinstrh";
-	// 	if (instr_fence)    new_ascii_instr = "fence";
 
-	// 	if (instr_getq)     new_ascii_instr = "getq";
-	// 	if (instr_setq)     new_ascii_instr = "setq";
-	// 	if (instr_retirq)   new_ascii_instr = "retirq";
-	// 	if (instr_maskirq)  new_ascii_instr = "maskirq";
-	// 	if (instr_waitirq)  new_ascii_instr = "waitirq";
-	// 	if (instr_timer)    new_ascii_instr = "timer";
-	// end
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1275,238 +1200,204 @@ module picorv32 #(
 
 	// Main State Machine
 
-	localparam cpu_state_trap   = 8'b10000000;
-	localparam cpu_state_fetch  = 8'b01000000;
-	localparam cpu_state_ld_rs1 = 8'b00100000;
-	localparam cpu_state_ld_rs2 = 8'b00010000;
-	localparam cpu_state_exec   = 8'b00001000;
-	localparam cpu_state_shift  = 8'b00000100;
-	localparam cpu_state_stmem  = 8'b00000010;
-	localparam cpu_state_ldmem  = 8'b00000001;
+	val cpu_state_trap   = "b10000000".U
+	val cpu_state_fetch  = "b01000000".U
+	val cpu_state_ld_rs1 = "b00100000".U
+	val cpu_state_ld_rs2 = "b00010000".U
+	val cpu_state_exec   = "b00001000".U
+	val cpu_state_shift  = "b00000100".U
+	val cpu_state_stmem  = "b00000010".U
+	val cpu_state_ldmem  = "b00000001".U
 
-	reg [7:0] cpu_state;
-	reg [1:0] irq_state;
+	val cpu_state = RegInit(cpu_state_fetch(8.W));
+	val irq_state = RegInit(0.U(2.W))
 
-	`FORMAL_KEEP reg [127:0] dbg_ascii_state;
 
-	always @* begin
-		dbg_ascii_state = "";
-		if (cpu_state == cpu_state_trap)   dbg_ascii_state = "trap";
-		if (cpu_state == cpu_state_fetch)  dbg_ascii_state = "fetch";
-		if (cpu_state == cpu_state_ld_rs1) dbg_ascii_state = "ld_rs1";
-		if (cpu_state == cpu_state_ld_rs2) dbg_ascii_state = "ld_rs2";
-		if (cpu_state == cpu_state_exec)   dbg_ascii_state = "exec";
-		if (cpu_state == cpu_state_shift)  dbg_ascii_state = "shift";
-		if (cpu_state == cpu_state_stmem)  dbg_ascii_state = "stmem";
-		if (cpu_state == cpu_state_ldmem)  dbg_ascii_state = "ldmem";
-	end
 
 	reg set_mem_do_rinst;
 	reg set_mem_do_rdata;
 	reg set_mem_do_wdata;
 
-	reg latched_store;
-	reg latched_stalu;
-	reg latched_branch;
+	val latched_store  = RegInit((if(~STACKADDR){true.B}else{false.B}))
+	val latched_stalu  = RegInit(false.B)
+	val latched_branch = RegInit(false.B)
 	reg latched_compr;
-	reg latched_trace;
-	reg latched_is_lu;
-	reg latched_is_lh;
-	reg latched_is_lb;
-	reg [regindex_bits-1:0] latched_rd;
+	val latched_trace = RegInit(false.B)
+	val latched_is_lu = RegInit(false.B)
+	val latched_is_lh = RegInit(false.B)
+	val latched_is_lb = RegInit(false.B)
+
+	val latched_rd = if(~STACKADDR){RegInit(2.U(regindex_bits.W))} else { Reg(UInt((regindex_bits.W))) }
 
 	reg [31:0] current_pc;
 	assign next_pc = latched_store && latched_branch ? reg_out & ~1 : reg_next_pc;
 
 	reg [3:0] pcpi_timeout_counter;
-	reg pcpi_timeout;
+	val pcpi_timeout = RegInit(false.B)
 
-	reg [31:0] next_irq_pending;
+	val next_irq_pending = RegInit(0.U(32.W))
 	reg do_waitirq;
 
-	reg [31:0] alu_out, alu_out_q;
-	reg alu_out_0, alu_out_0_q;
+	reg [31:0] alu_out_q;
+	reg alu_out_0_q;
 	reg alu_wait, alu_wait_2;
 
-	reg [31:0] alu_add_sub;
-	reg [31:0] alu_shl, alu_shr;
-	reg alu_eq, alu_ltu, alu_lts;
+	val alu_add_sub = Wire(UInt(32.W))
+	val alu_shl = Wire(UInt(32.W))
+  val alu_shr = Wire(UInt(32.W))
+	val alu_eq  = Wire(Bool())
+  val alu_ltu = Wire(Bool())
+  val alu_lts = Wire(Bool())
 
-	generate if (TWO_CYCLE_ALU) begin
-		always @(posedge clk) begin
-			alu_add_sub <= instr_sub ? reg_op1 - reg_op2 : reg_op1 + reg_op2;
-			alu_eq <= reg_op1 == reg_op2;
-			alu_lts <= $signed(reg_op1) < $signed(reg_op2);
-			alu_ltu <= reg_op1 < reg_op2;
-			alu_shl <= reg_op1 << reg_op2[4:0];
-			alu_shr <= $signed({instr_sra || instr_srai ? reg_op1[31] : 1'b0, reg_op1}) >>> reg_op2[4:0];
-		end
-	end else begin
-		always @* begin
-			alu_add_sub = instr_sub ? reg_op1 - reg_op2 : reg_op1 + reg_op2;
-			alu_eq = reg_op1 == reg_op2;
-			alu_lts = $signed(reg_op1) < $signed(reg_op2);
-			alu_ltu = reg_op1 < reg_op2;
-			alu_shl = reg_op1 << reg_op2[4:0];
-			alu_shr = $signed({instr_sra || instr_srai ? reg_op1[31] : 1'b0, reg_op1}) >>> reg_op2[4:0];
-		end
-	end endgenerate
 
-	always @* begin
-		alu_out_0 = 'bx;
-		(* parallel_case, full_case *)
-		case (1'b1)
-			instr_beq:
-				alu_out_0 = alu_eq;
-			instr_bne:
-				alu_out_0 = !alu_eq;
-			instr_bge:
-				alu_out_0 = !alu_lts;
-			instr_bgeu:
-				alu_out_0 = !alu_ltu;
-			is_slti_blt_slt && (!TWO_CYCLE_COMPARE || !{instr_beq,instr_bne,instr_bge,instr_bgeu}):
-				alu_out_0 = alu_lts;
-			is_sltiu_bltu_sltu && (!TWO_CYCLE_COMPARE || !{instr_beq,instr_bne,instr_bge,instr_bgeu}):
-				alu_out_0 = alu_ltu;
-		endcase
 
-		alu_out = 'bx;
-		(* parallel_case, full_case *)
-		case (1'b1)
-			is_lui_auipc_jal_jalr_addi_add_sub:
-				alu_out = alu_add_sub;
-			is_compare:
-				alu_out = alu_out_0;
-			instr_xori || instr_xor:
-				alu_out = reg_op1 ^ reg_op2;
-			instr_ori || instr_or:
-				alu_out = reg_op1 | reg_op2;
-			instr_andi || instr_and:
-				alu_out = reg_op1 & reg_op2;
-			BARREL_SHIFTER && (instr_sll || instr_slli):
-				alu_out = alu_shl;
-			BARREL_SHIFTER && (instr_srl || instr_srli || instr_sra || instr_srai):
-				alu_out = alu_shr;
-		endcase
 
-`ifdef RISCV_FORMAL_BLACKBOX_ALU
-		alu_out_0 = $anyseq;
-		alu_out = $anyseq;
-`endif
-	end
 
-	reg clear_prefetched_high_word_q;
-	always @(posedge clk) clear_prefetched_high_word_q <= clear_prefetched_high_word;
+	if (TWO_CYCLE_ALU){
+    alu_add_sub := RegNext( Mux(instr_sub, reg_op1 - reg_op2, reg_op1 + reg_op2) )
+    alu_eq  := RegNext(reg_op1 === reg_op2)
+    alu_lts := RegNext(reg_op1.asSInt < reg_op2.asSInt)
+    alu_ltu := RegNext(reg_op1 < reg_op2)
+    alu_shl := RegNext(reg_op1 << reg_op2(4,0))
+    alu_shr := RegNext( Cat( Fill(32, Mux(instr_sra | instr_srai, reg_op1.extract(31), 0.U(1.W))), reg_op1) >> reg_op2(4,0) )
+  } else{
+    alu_add_sub := Mux( instr_sub, reg_op1 - reg_op2, reg_op1 + reg_op2 )
+    alu_eq  := reg_op1 === reg_op2
+    alu_lts := reg_op1.asSInt < reg_op2.asSInt
+    alu_ltu := reg_op1 < reg_op2
+    alu_shl := reg_op1 << reg_op2(4,0)
+    alu_shr := Cat( Fill(32, Mux(instr_sra | instr_srai, reg_op1.extract(31), 0.U(1.W))), reg_op1) >> reg_op2(4,0)
+  }
 
-	always @* begin
-		clear_prefetched_high_word = clear_prefetched_high_word_q;
-		if (!prefetched_high_word)
-			clear_prefetched_high_word = 0;
-		if (latched_branch || irq_state || !resetn)
-			clear_prefetched_high_word = COMPRESSED_ISA;
-	end
+  val alu_out_0 = Mux1H(Seq(
+      instr_beq  ->  alu_eq,
+      instr_bne  -> ~alu_eq,
+      instr_bge  -> ~alu_lts,
+      instr_bgeu -> ~alu_ltu,
+      ( is_slti_blt_slt    & ~instr_beq & ~instr_bne & ~instr_bge & ~instr_bgeu ) -> alu_lts,
+      ( is_sltiu_bltu_sltu & ~instr_beq & ~instr_bne & ~instr_bge & ~instr_bgeu ) -> alu_ltu,
+    ) ++
+    if( !TWO_CYCLE_COMPARE ){
+      Seq(
+        is_slti_blt_slt     -> alu_lts,
+        is_sltiu_bltu_sltu  -> alu_ltu,      
+      )
+    } else { Seq() }
+  )
 
-	reg cpuregs_write;
-	reg [31:0] cpuregs_wrdata;
-	reg [31:0] cpuregs_rs1;
-	reg [31:0] cpuregs_rs2;
-	reg [regindex_bits-1:0] decoded_rs;
+  val alu_out = Mux1H(Seq(
+			is_lui_auipc_jal_jalr_addi_add_sub -> alu_add_sub,
+			is_compare -> alu_out_0,
+			( instr_xori | instr_xor ) -> ( reg_op1 ^ reg_op2 ),
+			( instr_ori  | instr_or  ) -> ( reg_op1 | reg_op2 ),
+			( instr_andi | instr_and ) -> ( reg_op1 & reg_op2 ),
+    ) ++ if( BARREL_SHIFTER ){
+			(instr_sll | instr_slli) -> alu_shl,
+			(instr_srl | instr_srli | instr_sra | instr_srai) -> alu_shr,
+    } else { Seq() }
+  )
 
-	always @* begin
-		cpuregs_write = 0;
-		cpuregs_wrdata = 'bx;
 
-		if (cpu_state == cpu_state_fetch) begin
-			(* parallel_case *)
-			case (1'b1)
-				latched_branch: begin
-					cpuregs_wrdata = reg_pc + (latched_compr ? 2 : 4);
-					cpuregs_write = 1;
-				end
-				latched_store && !latched_branch: begin
-					cpuregs_wrdata = latched_stalu ? alu_out_q : reg_out;
-					cpuregs_write = 1;
-				end
-				ENABLE_IRQ && irq_state[0]: begin
-					cpuregs_wrdata = reg_next_pc | latched_compr;
-					cpuregs_write = 1;
-				end
-				ENABLE_IRQ && irq_state[1]: begin
-					cpuregs_wrdata = irq_pending & ~irq_mask;
-					cpuregs_write = 1;
-				end
-			endcase
-		end
-	end
 
-`ifndef PICORV32_REGS
-	always @(posedge clk) begin
-		if (resetn && cpuregs_write && latched_rd)
-`ifdef PICORV32_TESTBUG_001
-			cpuregs[latched_rd ^ 1] <= cpuregs_wrdata;
-`elsif PICORV32_TESTBUG_002
-			cpuregs[latched_rd] <= cpuregs_wrdata ^ 1;
-`else
-			cpuregs[latched_rd] <= cpuregs_wrdata;
-`endif
-	end
 
-	always @* begin
-		decoded_rs = 'bx;
-		if (ENABLE_REGS_DUALPORT) begin
-`ifndef RISCV_FORMAL_BLACKBOX_REGS
-			cpuregs_rs1 = decoded_rs1 ? cpuregs[decoded_rs1] : 0;
-			cpuregs_rs2 = decoded_rs2 ? cpuregs[decoded_rs2] : 0;
-`else
-			cpuregs_rs1 = decoded_rs1 ? $anyseq : 0;
-			cpuregs_rs2 = decoded_rs2 ? $anyseq : 0;
-`endif
-		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
-`ifndef RISCV_FORMAL_BLACKBOX_REGS
-			cpuregs_rs1 = decoded_rs ? cpuregs[decoded_rs] : 0;
-`else
-			cpuregs_rs1 = decoded_rs ? $anyseq : 0;
-`endif
-			cpuregs_rs2 = cpuregs_rs1;
-		end
-	end
-`else
+	val clear_prefetched_high_word_q = RegNext( clear_prefetched_high_word )
+
+  clear_prefetched_high_word :=
+    MuxCase( clear_prefetched_high_word_q, Array(
+      (~prefetched_high_word -> false.B) ++ 
+      if( COMPRESSED_ISA ){
+        Array( latched_branch | irq_state | reset)
+      } else { Array() }
+    ) )
+
+
+
+
+
+
+
+  val cpuregs_write = 
+    (cpu_state === cpu_state_fetch) & (
+      latched_branch | latched_store |
+      (if( ENABLE_IRQ ) { irq_state.extract(0) | irq_state.extract(1) } else { false.B })
+    )
+
+	val cpuregs_wrdata =
+    Mux1H(Seq(
+        (cpu_state == cpu_state_fetch) & latched_branch                  -> reg_pc + Mux(latched_compr, 2.U, 4.U),
+        (cpu_state == cpu_state_fetch) & latched_store & ~latched_branch -> Mux(latched_stalu, alu_out_q, reg_out),
+      ) ++ if( ENABLE_IRQ ) { Seq(
+        (cpu_state == cpu_state_fetch) & irq_state.extract(0) -> reg_next_pc | latched_compr,
+        (cpu_state == cpu_state_fetch) & irq_state.extract(1) -> irq_pending & ~irq_mask        
+      )} else { Seq() }
+    )
+
+
 	wire[31:0] cpuregs_rdata1;
 	wire[31:0] cpuregs_rdata2;
 
-	wire [5:0] cpuregs_waddr = latched_rd;
-	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? decoded_rs1 : decoded_rs;
-	wire [5:0] cpuregs_raddr2 = ENABLE_REGS_DUALPORT ? decoded_rs2 : 0;
+  val cpuregs_waddr = latched_rd
 
-	`PICORV32_REGS cpuregs (
-		.clk(clk),
-		.wen(resetn && cpuregs_write && latched_rd),
-		.waddr(cpuregs_waddr),
-		.raddr1(cpuregs_raddr1),
-		.raddr2(cpuregs_raddr2),
-		.wdata(cpuregs_wrdata),
-		.rdata1(cpuregs_rdata1),
-		.rdata2(cpuregs_rdata2)
-	);
 
-	always @* begin
-		decoded_rs = 'bx;
-		if (ENABLE_REGS_DUALPORT) begin
-			cpuregs_rs1 = decoded_rs1 ? cpuregs_rdata1 : 0;
-			cpuregs_rs2 = decoded_rs2 ? cpuregs_rdata2 : 0;
-		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
-			cpuregs_rs1 = decoded_rs ? cpuregs_rdata1 : 0;
-			cpuregs_rs2 = cpuregs_rs1;
-		end
-	end
-`endif
 
-	assign launch_next_insn = cpu_state == cpu_state_fetch && decoder_trigger && (!ENABLE_IRQ || irq_delay || irq_active || !(irq_pending & ~irq_mask));
+	val cpuregs_raddr1 = if(ENABLE_REGS_DUALPORT) {decoded_rs1} else { decoded_rs }
+	val cpuregs_raddr2 = if(ENABLE_REGS_DUALPORT) {decoded_rs2} else { 0.U(6.W) }
+
+  val cpuregs = Module(new MEM(UInt(32.W), 32))
+
+  when( ~reset & cpuregs_write & latched_rd ){
+    cpuregs(cpuregs_waddr(4,0)) := cpuregs_wrdata
+  }
+
+  cpuregs_rdata1 := cpuregs(cpuregs_raddr1(4,0))
+  cpuregs_rdata2 := cpuregs(cpuregs_raddr2(4,0))
+
+
+	val cpuregs_rs1 = Wire(UInt(32.W))
+	val cpuregs_rs2 = Wire(UInt(32.W))
+	val decoded_rs  = Wire(UInt(regindex_bits.W))
+
+  if (ENABLE_REGS_DUALPORT) {
+    cpuregs_rs1 := Mux(decoded_rs1, cpuregs_rdata1, 0.U)
+    cpuregs_rs2 := Mux(decoded_rs2, cpuregs_rdata2, 0.U)
+  } else {
+    decoded_rs  := Mux(cpu_state === cpu_state_ld_rs2, decoded_rs2, decoded_rs1)
+    cpuregs_rs1 := Mux(decoded_rs, cpuregs_rdata1, 0.U)
+    cpuregs_rs2 := cpuregs_rs1
+  }
+
+	launch_next_insn := 
+    if( !ENABLE_IRQ ){
+      (cpu_state === cpu_state_fetch) & decoder_trigger
+    } else {
+      (cpu_state === cpu_state_fetch) & decoder_trigger & ( irq_delay | irq_active | ~(irq_pending & ~irq_mask))
+    }
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	always @(posedge clk) begin
-		trap <= 0;
 		reg_sh <= 'bx;
 		reg_out <= 'bx;
 		set_mem_do_rinst = 0;
@@ -1526,28 +1417,28 @@ module picorv32 #(
 			dbg_rs2val_valid <= 0;
 		end
 
-		if (WITH_PCPI && CATCH_ILLINSN) begin
-			if (resetn && pcpi_valid && !pcpi_int_wait) begin
+		if (WITH_PCPI && CATCH_ILLINSN){
+			when(resetn && pcpi_valid && !pcpi_int_wait){
 				if (pcpi_timeout_counter)
-					pcpi_timeout_counter <= pcpi_timeout_counter - 1;
-			end else
-				pcpi_timeout_counter <= ~0;
-			pcpi_timeout <= !pcpi_timeout_counter;
-		end
+					pcpi_timeout_counter <= pcpi_timeout_counter - 1;        
+      } .otherwise{
+				pcpi_timeout_counter <= ~0;        
+      }
+			pcpi_timeout <= !pcpi_timeout_counter;      
+    }
 
-		if (ENABLE_COUNTERS) begin
-			count_cycle <= resetn ? count_cycle + 1 : 0;
-			if (!ENABLE_COUNTERS64) count_cycle[63:32] <= 0;
-		end else begin
-			count_cycle <= 'bx;
-			count_instr <= 'bx;
-		end
 
-		next_irq_pending = ENABLE_IRQ ? irq_pending & LATCHED_IRQ : 'bx;
 
-		if (ENABLE_IRQ && ENABLE_IRQ_TIMER && timer) begin
-			timer <= timer - 1;
-		end
+
+    if( ENABLE_IRQ ){
+		  next_irq_pending := irq_pending & LATCHED_IRQ
+    }
+
+		if (ENABLE_IRQ && ENABLE_IRQ_TIMER){
+      when( timer =/= 0.U ){
+			  timer := timer - 1.U
+      }
+    }
 
 		decoder_trigger <= mem_do_rinst && mem_done;
 		decoder_trigger_q <= decoder_trigger;
@@ -1557,473 +1448,439 @@ module picorv32 #(
 
 		trace_valid <= 0;
 
-		if (!ENABLE_TRACE)
-			trace_data <= 'bx;
+		if (!ENABLE_TRACE){
+			trace_data <= 'bx;      
+    }
 
-		if (!resetn) begin
-			reg_pc <= PROGADDR_RESET;
-			reg_next_pc <= PROGADDR_RESET;
-			if (ENABLE_COUNTERS)
-				count_instr <= 0;
-			latched_store <= 0;
-			latched_stalu <= 0;
-			latched_branch <= 0;
-			latched_trace <= 0;
-			latched_is_lu <= 0;
-			latched_is_lh <= 0;
-			latched_is_lb <= 0;
-			pcpi_valid <= 0;
-			pcpi_timeout <= 0;
-			irq_active <= 0;
-			irq_delay <= 0;
-			irq_mask <= ~0;
-			next_irq_pending = 0;
-			irq_state <= 0;
-			eoi <= 0;
-			timer <= 0;
-			if (~STACKADDR) begin
-				latched_store <= 1;
-				latched_rd <= 2;
-				reg_out <= STACKADDR;
-			end
-			cpu_state <= cpu_state_fetch;
-		end else
-		(* parallel_case, full_case *)
-		case (cpu_state)
-			cpu_state_trap: begin
-				trap <= 1;
-			end
 
-			cpu_state_fetch: begin
-				mem_do_rinst <= !decoder_trigger && !do_waitirq;
-				mem_wordsize <= 0;
+    io.trap := RegNext(cpu_state === cpu_state_trap)
 
-				current_pc = reg_next_pc;
 
-				(* parallel_case *)
-				case (1'b1)
-					latched_branch: begin
-						current_pc = latched_store ? (latched_stalu ? alu_out_q : reg_out) & ~1 : reg_next_pc;
-						`debug($display("ST_RD:  %2d 0x%08x, BRANCH 0x%08x", latched_rd, reg_pc + (latched_compr ? 2 : 4), current_pc);)
-					end
-					latched_store && !latched_branch: begin
-						`debug($display("ST_RD:  %2d 0x%08x", latched_rd, latched_stalu ? alu_out_q : reg_out);)
-					end
-					ENABLE_IRQ && irq_state[0]: begin
-						current_pc = PROGADDR_IRQ;
-						irq_active <= 1;
-						mem_do_rinst <= 1;
-					end
-					ENABLE_IRQ && irq_state[1]: begin
-						eoi <= irq_pending & ~irq_mask;
-						next_irq_pending = next_irq_pending & irq_mask;
-					end
-				endcase
+    when( cpu_state_fetch === cpu_state ){
+      mem_do_rinst <= !decoder_trigger && !do_waitirq;
+      mem_wordsize <= 0;
 
-				if (ENABLE_TRACE && latched_trace) begin
-					latched_trace <= 0;
-					trace_valid <= 1;
-					if (latched_branch)
-						trace_data <= (irq_active ? TRACE_IRQ : 0) | TRACE_BRANCH | (current_pc & 32'hfffffffe);
-					else
-						trace_data <= (irq_active ? TRACE_IRQ : 0) | (latched_stalu ? alu_out_q : reg_out);
-				end
+      current_pc = reg_next_pc;
 
-				reg_pc <= current_pc;
-				reg_next_pc <= current_pc;
+      (* parallel_case *)
+      case (1'b1)
+        latched_branch: begin
+          current_pc = latched_store ? (latched_stalu ? alu_out_q : reg_out) & ~1 : reg_next_pc;
+          `debug($display("ST_RD:  %2d 0x%08x, BRANCH 0x%08x", latched_rd, reg_pc + (latched_compr ? 2 : 4), current_pc);)
+        end
+        latched_store && !latched_branch: begin
+          `debug($display("ST_RD:  %2d 0x%08x", latched_rd, latched_stalu ? alu_out_q : reg_out);)
+        end
+        ENABLE_IRQ && irq_state[0]: begin
+          current_pc = PROGADDR_IRQ;
+          irq_active <= 1;
+          mem_do_rinst <= 1;
+        end
+        ENABLE_IRQ && irq_state[1]: begin
+          eoi <= irq_pending & ~irq_mask;
+          next_irq_pending = next_irq_pending & irq_mask;
+        end
+      endcase
 
-				latched_store <= 0;
-				latched_stalu <= 0;
-				latched_branch <= 0;
-				latched_is_lu <= 0;
-				latched_is_lh <= 0;
-				latched_is_lb <= 0;
-				latched_rd <= decoded_rd;
-				latched_compr <= compressed_instr;
+      if (ENABLE_TRACE && latched_trace) begin
+        latched_trace <= 0;
+        trace_valid <= 1;
+        if (latched_branch)
+          trace_data <= (irq_active ? TRACE_IRQ : 0) | TRACE_BRANCH | (current_pc & 32'hfffffffe);
+        else
+          trace_data <= (irq_active ? TRACE_IRQ : 0) | (latched_stalu ? alu_out_q : reg_out);
+      end
 
-				if (ENABLE_IRQ && ((decoder_trigger && !irq_active && !irq_delay && |(irq_pending & ~irq_mask)) || irq_state)) begin
-					irq_state <=
-						irq_state == 2'b00 ? 2'b01 :
-						irq_state == 2'b01 ? 2'b10 : 2'b00;
-					latched_compr <= latched_compr;
-					if (ENABLE_IRQ_QREGS)
-						latched_rd <= irqregs_offset | irq_state[0];
-					else
-						latched_rd <= irq_state[0] ? 4 : 3;
-				end else
-				if (ENABLE_IRQ && (decoder_trigger || do_waitirq) && instr_waitirq) begin
-					if (irq_pending) begin
-						latched_store <= 1;
-						reg_out <= irq_pending;
-						reg_next_pc <= current_pc + (compressed_instr ? 2 : 4);
-						mem_do_rinst <= 1;
-					end else
-						do_waitirq <= 1;
-				end else
-				if (decoder_trigger) begin
-					`debug($display("-- %-0t", $time);)
-					irq_delay <= irq_active;
-					reg_next_pc <= current_pc + (compressed_instr ? 2 : 4);
-					if (ENABLE_TRACE)
-						latched_trace <= 1;
-					if (ENABLE_COUNTERS) begin
-						count_instr <= count_instr + 1;
-						if (!ENABLE_COUNTERS64) count_instr[63:32] <= 0;
-					end
-					if (instr_jal) begin
-						mem_do_rinst <= 1;
-						reg_next_pc <= current_pc + decoded_imm_j;
-						latched_branch <= 1;
-					end else begin
-						mem_do_rinst <= 0;
-						mem_do_prefetch <= !instr_jalr && !instr_retirq;
-						cpu_state <= cpu_state_ld_rs1;
-					end
-				end
-			end
+      reg_pc <= current_pc;
+      reg_next_pc <= current_pc;
 
-			cpu_state_ld_rs1: begin
-				reg_op1 <= 'bx;
-				reg_op2 <= 'bx;
+      latched_store <= 0;
+      latched_stalu <= 0;
+      latched_branch <= 0;
+      latched_is_lu <= 0;
+      latched_is_lh <= 0;
+      latched_is_lb <= 0;
+      latched_rd <= decoded_rd;
+      latched_compr <= compressed_instr;
 
-				(* parallel_case *)
-				case (1'b1)
-					(CATCH_ILLINSN || WITH_PCPI) && instr_trap: begin
-						if (WITH_PCPI) begin
-							`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-							reg_op1 <= cpuregs_rs1;
-							dbg_rs1val <= cpuregs_rs1;
-							dbg_rs1val_valid <= 1;
-							if (ENABLE_REGS_DUALPORT) begin
-								pcpi_valid <= 1;
-								`debug($display("LD_RS2: %2d 0x%08x", decoded_rs2, cpuregs_rs2);)
-								reg_sh <= cpuregs_rs2;
-								reg_op2 <= cpuregs_rs2;
-								dbg_rs2val <= cpuregs_rs2;
-								dbg_rs2val_valid <= 1;
-								if (pcpi_int_ready) begin
-									mem_do_rinst <= 1;
-									pcpi_valid <= 0;
-									reg_out <= pcpi_int_rd;
-									latched_store <= pcpi_int_wr;
-									cpu_state <= cpu_state_fetch;
-								end else
-								if (CATCH_ILLINSN && (pcpi_timeout || instr_ecall_ebreak)) begin
-									pcpi_valid <= 0;
-									`debug($display("EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
-									if (ENABLE_IRQ && !irq_mask[irq_ebreak] && !irq_active) begin
-										next_irq_pending[irq_ebreak] = 1;
-										cpu_state <= cpu_state_fetch;
-									end else
-										cpu_state <= cpu_state_trap;
-								end
-							end else begin
-								cpu_state <= cpu_state_ld_rs2;
-							end
-						end else begin
-							`debug($display("EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
-							if (ENABLE_IRQ && !irq_mask[irq_ebreak] && !irq_active) begin
-								next_irq_pending[irq_ebreak] = 1;
-								cpu_state <= cpu_state_fetch;
-							end else
-								cpu_state <= cpu_state_trap;
-						end
-					end
-					ENABLE_COUNTERS && is_rdcycle_rdcycleh_rdinstr_rdinstrh: begin
-						(* parallel_case, full_case *)
-						case (1'b1)
-							instr_rdcycle:
-								reg_out <= count_cycle[31:0];
-							instr_rdcycleh && ENABLE_COUNTERS64:
-								reg_out <= count_cycle[63:32];
-							instr_rdinstr:
-								reg_out <= count_instr[31:0];
-							instr_rdinstrh && ENABLE_COUNTERS64:
-								reg_out <= count_instr[63:32];
-						endcase
-						latched_store <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-					is_lui_auipc_jal: begin
-						reg_op1 <= instr_lui ? 0 : reg_pc;
-						reg_op2 <= decoded_imm;
-						if (TWO_CYCLE_ALU)
-							alu_wait <= 1;
-						else
-							mem_do_rinst <= mem_do_prefetch;
-						cpu_state <= cpu_state_exec;
-					end
-					ENABLE_IRQ && ENABLE_IRQ_QREGS && instr_getq: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_out <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						latched_store <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-					ENABLE_IRQ && ENABLE_IRQ_QREGS && instr_setq: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_out <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						latched_rd <= latched_rd | irqregs_offset;
-						latched_store <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-					ENABLE_IRQ && instr_retirq: begin
-						eoi <= 0;
-						irq_active <= 0;
-						latched_branch <= 1;
-						latched_store <= 1;
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_out <= CATCH_MISALIGN ? (cpuregs_rs1 & 32'h fffffffe) : cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-					ENABLE_IRQ && instr_maskirq: begin
-						latched_store <= 1;
-						reg_out <= irq_mask;
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						irq_mask <= cpuregs_rs1 | MASKED_IRQ;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-					ENABLE_IRQ && ENABLE_IRQ_TIMER && instr_timer: begin
-						latched_store <= 1;
-						reg_out <= timer;
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						timer <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-					is_lb_lh_lw_lbu_lhu && !instr_trap: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_op1 <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						cpu_state <= cpu_state_ldmem;
-						mem_do_rinst <= 1;
-					end
-					is_slli_srli_srai && !BARREL_SHIFTER: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_op1 <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						reg_sh <= decoded_rs2;
-						cpu_state <= cpu_state_shift;
-					end
-					is_jalr_addi_slti_sltiu_xori_ori_andi, is_slli_srli_srai && BARREL_SHIFTER: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_op1 <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						reg_op2 <= is_slli_srli_srai && BARREL_SHIFTER ? decoded_rs2 : decoded_imm;
-						if (TWO_CYCLE_ALU)
-							alu_wait <= 1;
-						else
-							mem_do_rinst <= mem_do_prefetch;
-						cpu_state <= cpu_state_exec;
-					end
-					default: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						reg_op1 <= cpuregs_rs1;
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						if (ENABLE_REGS_DUALPORT) begin
-							`debug($display("LD_RS2: %2d 0x%08x", decoded_rs2, cpuregs_rs2);)
-							reg_sh <= cpuregs_rs2;
-							reg_op2 <= cpuregs_rs2;
-							dbg_rs2val <= cpuregs_rs2;
-							dbg_rs2val_valid <= 1;
-							(* parallel_case *)
-							case (1'b1)
-								is_sb_sh_sw: begin
-									cpu_state <= cpu_state_stmem;
-									mem_do_rinst <= 1;
-								end
-								is_sll_srl_sra && !BARREL_SHIFTER: begin
-									cpu_state <= cpu_state_shift;
-								end
-								default: begin
-									if (TWO_CYCLE_ALU || (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu)) begin
-										alu_wait_2 <= TWO_CYCLE_ALU && (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu);
-										alu_wait <= 1;
-									end else
-										mem_do_rinst <= mem_do_prefetch;
-									cpu_state <= cpu_state_exec;
-								end
-							endcase
-						end else
-							cpu_state <= cpu_state_ld_rs2;
-					end
-				endcase
-			end
+      if (ENABLE_IRQ && ((decoder_trigger && !irq_active && !irq_delay && |(irq_pending & ~irq_mask)) || irq_state)) begin
+        irq_state <=
+          irq_state == 2'b00 ? 2'b01 :
+          irq_state == 2'b01 ? 2'b10 : 2'b00;
+        latched_compr <= latched_compr;
+        if (ENABLE_IRQ_QREGS)
+          latched_rd <= irqregs_offset | irq_state[0];
+        else
+          latched_rd <= irq_state[0] ? 4 : 3;
+      end else
+      if (ENABLE_IRQ && (decoder_trigger || do_waitirq) && instr_waitirq) begin
+        if (irq_pending) begin
+          latched_store <= 1;
+          reg_out <= irq_pending;
+          reg_next_pc <= current_pc + (compressed_instr ? 2 : 4);
+          mem_do_rinst <= 1;
+        end else
+          do_waitirq <= 1;
+      end else
+      if (decoder_trigger) begin
+        `debug($display("-- %-0t", $time);)
+        irq_delay <= irq_active;
+        reg_next_pc <= current_pc + (compressed_instr ? 2 : 4);
+        if (ENABLE_TRACE)
+          latched_trace <= 1;
+        if (ENABLE_COUNTERS) begin
+          count_instr <= count_instr + 1;
+          if (!ENABLE_COUNTERS64) count_instr[63:32] <= 0;
+        end
+        if (instr_jal) begin
+          mem_do_rinst <= 1;
+          reg_next_pc <= current_pc + decoded_imm_j;
+          latched_branch <= 1;
+        end else begin
+          mem_do_rinst <= 0;
+          mem_do_prefetch <= !instr_jalr && !instr_retirq;
+          cpu_state <= cpu_state_ld_rs1;
+        end
+      end
+    } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
+      reg_op1 <= 'bx;
+      reg_op2 <= 'bx;
 
-			cpu_state_ld_rs2: begin
-				`debug($display("LD_RS2: %2d 0x%08x", decoded_rs2, cpuregs_rs2);)
-				reg_sh <= cpuregs_rs2;
-				reg_op2 <= cpuregs_rs2;
-				dbg_rs2val <= cpuregs_rs2;
-				dbg_rs2val_valid <= 1;
+      (* parallel_case *)
+      case (1'b1)
+        (CATCH_ILLINSN || WITH_PCPI) && instr_trap: begin
+          if (WITH_PCPI) begin
+            `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+            reg_op1 <= cpuregs_rs1;
+            dbg_rs1val <= cpuregs_rs1;
+            dbg_rs1val_valid <= 1;
+            if (ENABLE_REGS_DUALPORT) begin
+              pcpi_valid <= 1;
+              `debug($display("LD_RS2: %2d 0x%08x", decoded_rs2, cpuregs_rs2);)
+              reg_sh <= cpuregs_rs2;
+              reg_op2 <= cpuregs_rs2;
+              dbg_rs2val <= cpuregs_rs2;
+              dbg_rs2val_valid <= 1;
+              if (pcpi_int_ready) begin
+                mem_do_rinst <= 1;
+                pcpi_valid <= 0;
+                reg_out <= pcpi_int_rd;
+                latched_store <= pcpi_int_wr;
+                cpu_state <= cpu_state_fetch;
+              end else
+              if (CATCH_ILLINSN && (pcpi_timeout || instr_ecall_ebreak)) begin
+                pcpi_valid <= 0;
+                `debug($display("EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
+                if (ENABLE_IRQ && !irq_mask[irq_ebreak] && !irq_active) begin
+                  next_irq_pending[irq_ebreak] = 1;
+                  cpu_state <= cpu_state_fetch;
+                end else
+                  cpu_state <= cpu_state_trap;
+              end
+            end else begin
+              cpu_state <= cpu_state_ld_rs2;
+            end
+          end else begin
+            `debug($display("EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
+            if (ENABLE_IRQ && !irq_mask[irq_ebreak] && !irq_active) begin
+              next_irq_pending[irq_ebreak] = 1;
+              cpu_state <= cpu_state_fetch;
+            end else
+              cpu_state <= cpu_state_trap;
+          end
+        end
+        ENABLE_COUNTERS && is_rdcycle_rdcycleh_rdinstr_rdinstrh: begin
+          (* parallel_case, full_case *)
+          case (1'b1)
+            instr_rdcycle:
+              reg_out <= count_cycle[31:0];
+            instr_rdcycleh && ENABLE_COUNTERS64:
+              reg_out <= count_cycle[63:32];
+            instr_rdinstr:
+              reg_out <= count_instr[31:0];
+            instr_rdinstrh && ENABLE_COUNTERS64:
+              reg_out <= count_instr[63:32];
+          endcase
+          latched_store <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+        is_lui_auipc_jal: begin
+          reg_op1 <= instr_lui ? 0 : reg_pc;
+          reg_op2 <= decoded_imm;
+          if (TWO_CYCLE_ALU)
+            alu_wait <= 1;
+          else
+            mem_do_rinst <= mem_do_prefetch;
+          cpu_state <= cpu_state_exec;
+        end
+        ENABLE_IRQ && ENABLE_IRQ_QREGS && instr_getq: begin
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_out <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          latched_store <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+        ENABLE_IRQ && ENABLE_IRQ_QREGS && instr_setq: begin
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_out <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          latched_rd <= latched_rd | irqregs_offset;
+          latched_store <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+        ENABLE_IRQ && instr_retirq: begin
+          eoi <= 0;
+          irq_active <= 0;
+          latched_branch <= 1;
+          latched_store <= 1;
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_out <= CATCH_MISALIGN ? (cpuregs_rs1 & 32'h fffffffe) : cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+        ENABLE_IRQ && instr_maskirq: begin
+          latched_store <= 1;
+          reg_out <= irq_mask;
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          irq_mask <= cpuregs_rs1 | MASKED_IRQ;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+        ENABLE_IRQ && ENABLE_IRQ_TIMER && instr_timer: begin
+          latched_store <= 1;
+          reg_out <= timer;
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          timer <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+        is_lb_lh_lw_lbu_lhu && !instr_trap: begin
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_op1 <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          cpu_state <= cpu_state_ldmem;
+          mem_do_rinst <= 1;
+        end
+        is_slli_srli_srai && !BARREL_SHIFTER: begin
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_op1 <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          reg_sh <= decoded_rs2;
+          cpu_state <= cpu_state_shift;
+        end
+        is_jalr_addi_slti_sltiu_xori_ori_andi, is_slli_srli_srai && BARREL_SHIFTER: begin
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_op1 <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          reg_op2 <= is_slli_srli_srai && BARREL_SHIFTER ? decoded_rs2 : decoded_imm;
+          if (TWO_CYCLE_ALU)
+            alu_wait <= 1;
+          else
+            mem_do_rinst <= mem_do_prefetch;
+          cpu_state <= cpu_state_exec;
+        end
+        default: begin
+          `debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+          reg_op1 <= cpuregs_rs1;
+          dbg_rs1val <= cpuregs_rs1;
+          dbg_rs1val_valid <= 1;
+          if (ENABLE_REGS_DUALPORT) begin
+            `debug($display("LD_RS2: %2d 0x%08x", decoded_rs2, cpuregs_rs2);)
+            reg_sh <= cpuregs_rs2;
+            reg_op2 <= cpuregs_rs2;
+            dbg_rs2val <= cpuregs_rs2;
+            dbg_rs2val_valid <= 1;
+            (* parallel_case *)
+            case (1'b1)
+              is_sb_sh_sw: begin
+                cpu_state <= cpu_state_stmem;
+                mem_do_rinst <= 1;
+              end
+              is_sll_srl_sra && !BARREL_SHIFTER: begin
+                cpu_state <= cpu_state_shift;
+              end
+              default: begin
+                if (TWO_CYCLE_ALU || (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu)) begin
+                  alu_wait_2 <= TWO_CYCLE_ALU && (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu);
+                  alu_wait <= 1;
+                end else
+                  mem_do_rinst <= mem_do_prefetch;
+                cpu_state <= cpu_state_exec;
+              end
+            endcase
+          end else
+            cpu_state <= cpu_state_ld_rs2;
+        end
+      endcase
+    } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
+      `debug($display("LD_RS2: %2d 0x%08x", decoded_rs2, cpuregs_rs2);)
+      reg_sh <= cpuregs_rs2;
+      reg_op2 <= cpuregs_rs2;
+      dbg_rs2val <= cpuregs_rs2;
+      dbg_rs2val_valid <= 1;
 
-				(* parallel_case *)
-				case (1'b1)
-					WITH_PCPI && instr_trap: begin
-						pcpi_valid <= 1;
-						if (pcpi_int_ready) begin
-							mem_do_rinst <= 1;
-							pcpi_valid <= 0;
-							reg_out <= pcpi_int_rd;
-							latched_store <= pcpi_int_wr;
-							cpu_state <= cpu_state_fetch;
-						end else
-						if (CATCH_ILLINSN && (pcpi_timeout || instr_ecall_ebreak)) begin
-							pcpi_valid <= 0;
-							`debug($display("EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
-							if (ENABLE_IRQ && !irq_mask[irq_ebreak] && !irq_active) begin
-								next_irq_pending[irq_ebreak] = 1;
-								cpu_state <= cpu_state_fetch;
-							end else
-								cpu_state <= cpu_state_trap;
-						end
-					end
-					is_sb_sh_sw: begin
-						cpu_state <= cpu_state_stmem;
-						mem_do_rinst <= 1;
-					end
-					is_sll_srl_sra && !BARREL_SHIFTER: begin
-						cpu_state <= cpu_state_shift;
-					end
-					default: begin
-						if (TWO_CYCLE_ALU || (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu)) begin
-							alu_wait_2 <= TWO_CYCLE_ALU && (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu);
-							alu_wait <= 1;
-						end else
-							mem_do_rinst <= mem_do_prefetch;
-						cpu_state <= cpu_state_exec;
-					end
-				endcase
-			end
+      (* parallel_case *)
+      case (1'b1)
+        WITH_PCPI && instr_trap: begin
+          pcpi_valid <= 1;
+          if (pcpi_int_ready) begin
+            mem_do_rinst <= 1;
+            pcpi_valid <= 0;
+            reg_out <= pcpi_int_rd;
+            latched_store <= pcpi_int_wr;
+            cpu_state <= cpu_state_fetch;
+          end else
+          if (CATCH_ILLINSN && (pcpi_timeout || instr_ecall_ebreak)) begin
+            pcpi_valid <= 0;
+            `debug($display("EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
+            if (ENABLE_IRQ && !irq_mask[irq_ebreak] && !irq_active) begin
+              next_irq_pending[irq_ebreak] = 1;
+              cpu_state <= cpu_state_fetch;
+            end else
+              cpu_state <= cpu_state_trap;
+          end
+        end
+        is_sb_sh_sw: begin
+          cpu_state <= cpu_state_stmem;
+          mem_do_rinst <= 1;
+        end
+        is_sll_srl_sra && !BARREL_SHIFTER: begin
+          cpu_state <= cpu_state_shift;
+        end
+        default: begin
+          if (TWO_CYCLE_ALU || (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu)) begin
+            alu_wait_2 <= TWO_CYCLE_ALU && (TWO_CYCLE_COMPARE && is_beq_bne_blt_bge_bltu_bgeu);
+            alu_wait <= 1;
+          end else
+            mem_do_rinst <= mem_do_prefetch;
+          cpu_state <= cpu_state_exec;
+        end
+      endcase
+    } .elsewhen( cpu_state_exec  === cpu_state  ){
+      reg_out <= reg_pc + decoded_imm;
+      if ((TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) && (alu_wait || alu_wait_2)) begin
+        mem_do_rinst <= mem_do_prefetch && !alu_wait_2;
+        alu_wait <= alu_wait_2;
+      end else
+      if (is_beq_bne_blt_bge_bltu_bgeu) begin
+        latched_rd <= 0;
+        latched_store <= TWO_CYCLE_COMPARE ? alu_out_0_q : alu_out_0;
+        latched_branch <= TWO_CYCLE_COMPARE ? alu_out_0_q : alu_out_0;
+        if (mem_done)
+          cpu_state <= cpu_state_fetch;
+        if (TWO_CYCLE_COMPARE ? alu_out_0_q : alu_out_0) begin
+          decoder_trigger <= 0;
+          set_mem_do_rinst = 1;
+        end
+      end else begin
+        latched_branch <= instr_jalr;
+        latched_store <= 1;
+        latched_stalu <= 1;
+        cpu_state <= cpu_state_fetch;
+      end        
+    } .elsewhen( cpu_state_shift  === cpu_state ){
+      latched_store <= 1;
+      if (reg_sh == 0) begin
+        reg_out <= reg_op1;
+        mem_do_rinst <= mem_do_prefetch;
+        cpu_state <= cpu_state_fetch;
+      end else if (TWO_STAGE_SHIFT && reg_sh >= 4) begin
+        (* parallel_case, full_case *)
+        case (1'b1)
+          instr_slli || instr_sll: reg_op1 <= reg_op1 << 4;
+          instr_srli || instr_srl: reg_op1 <= reg_op1 >> 4;
+          instr_srai || instr_sra: reg_op1 <= $signed(reg_op1) >>> 4;
+        endcase
+        reg_sh <= reg_sh - 4;
+      end else begin
+        (* parallel_case, full_case *)
+        case (1'b1)
+          instr_slli || instr_sll: reg_op1 <= reg_op1 << 1;
+          instr_srli || instr_srl: reg_op1 <= reg_op1 >> 1;
+          instr_srai || instr_sra: reg_op1 <= $signed(reg_op1) >>> 1;
+        endcase
+        reg_sh <= reg_sh - 1;
+      end        
+    } .elsewhen( cpu_state_stmem === cpu_state ){
+      if (ENABLE_TRACE)
+        reg_out <= reg_op2;
+      if (!mem_do_prefetch || mem_done) begin
+        if (!mem_do_wdata) begin
+          (* parallel_case, full_case *)
+          case (1'b1)
+            instr_sb: mem_wordsize <= 2;
+            instr_sh: mem_wordsize <= 1;
+            instr_sw: mem_wordsize <= 0;
+          endcase
+          if (ENABLE_TRACE) begin
+            trace_valid <= 1;
+            trace_data <= (irq_active ? TRACE_IRQ : 0) | TRACE_ADDR | ((reg_op1 + decoded_imm) & 32'hffffffff);
+          end
+          reg_op1 <= reg_op1 + decoded_imm;
+          set_mem_do_wdata = 1;
+        end
+        if (!mem_do_prefetch && mem_done) begin
+          cpu_state <= cpu_state_fetch;
+          decoder_trigger <= 1;
+          decoder_pseudo_trigger <= 1;
+        end
+      end
+    } .elsewhen( cpu_state_ldmem === cpu_state ){
+      latched_store <= 1;
+      if (!mem_do_prefetch || mem_done) begin
+        if (!mem_do_rdata) begin
+          (* parallel_case, full_case *)
+          case (1'b1)
+            instr_lb || instr_lbu: mem_wordsize <= 2;
+            instr_lh || instr_lhu: mem_wordsize <= 1;
+            instr_lw: mem_wordsize <= 0;
+          endcase
+          latched_is_lu <= is_lbu_lhu_lw;
+          latched_is_lh <= instr_lh;
+          latched_is_lb <= instr_lb;
+          if (ENABLE_TRACE) begin
+            trace_valid <= 1;
+            trace_data <= (irq_active ? TRACE_IRQ : 0) | TRACE_ADDR | ((reg_op1 + decoded_imm) & 32'hffffffff);
+          end
+          reg_op1 <= reg_op1 + decoded_imm;
+          set_mem_do_rdata = 1;
+        end
+        if (!mem_do_prefetch && mem_done) begin
+          (* parallel_case, full_case *)
+          case (1'b1)
+            latched_is_lu: reg_out <= mem_rdata_word;
+            latched_is_lh: reg_out <= $signed(mem_rdata_word[15:0]);
+            latched_is_lb: reg_out <= $signed(mem_rdata_word[7:0]);
+          endcase
+          decoder_trigger <= 1;
+          decoder_pseudo_trigger <= 1;
+          cpu_state <= cpu_state_fetch;
+        end
+      end        
+    }
 
-			cpu_state_exec: begin
-				reg_out <= reg_pc + decoded_imm;
-				if ((TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) && (alu_wait || alu_wait_2)) begin
-					mem_do_rinst <= mem_do_prefetch && !alu_wait_2;
-					alu_wait <= alu_wait_2;
-				end else
-				if (is_beq_bne_blt_bge_bltu_bgeu) begin
-					latched_rd <= 0;
-					latched_store <= TWO_CYCLE_COMPARE ? alu_out_0_q : alu_out_0;
-					latched_branch <= TWO_CYCLE_COMPARE ? alu_out_0_q : alu_out_0;
-					if (mem_done)
-						cpu_state <= cpu_state_fetch;
-					if (TWO_CYCLE_COMPARE ? alu_out_0_q : alu_out_0) begin
-						decoder_trigger <= 0;
-						set_mem_do_rinst = 1;
-					end
-				end else begin
-					latched_branch <= instr_jalr;
-					latched_store <= 1;
-					latched_stalu <= 1;
-					cpu_state <= cpu_state_fetch;
-				end
-			end
 
-			cpu_state_shift: begin
-				latched_store <= 1;
-				if (reg_sh == 0) begin
-					reg_out <= reg_op1;
-					mem_do_rinst <= mem_do_prefetch;
-					cpu_state <= cpu_state_fetch;
-				end else if (TWO_STAGE_SHIFT && reg_sh >= 4) begin
-					(* parallel_case, full_case *)
-					case (1'b1)
-						instr_slli || instr_sll: reg_op1 <= reg_op1 << 4;
-						instr_srli || instr_srl: reg_op1 <= reg_op1 >> 4;
-						instr_srai || instr_sra: reg_op1 <= $signed(reg_op1) >>> 4;
-					endcase
-					reg_sh <= reg_sh - 4;
-				end else begin
-					(* parallel_case, full_case *)
-					case (1'b1)
-						instr_slli || instr_sll: reg_op1 <= reg_op1 << 1;
-						instr_srli || instr_srl: reg_op1 <= reg_op1 >> 1;
-						instr_srai || instr_sra: reg_op1 <= $signed(reg_op1) >>> 1;
-					endcase
-					reg_sh <= reg_sh - 1;
-				end
-			end
 
-			cpu_state_stmem: begin
-				if (ENABLE_TRACE)
-					reg_out <= reg_op2;
-				if (!mem_do_prefetch || mem_done) begin
-					if (!mem_do_wdata) begin
-						(* parallel_case, full_case *)
-						case (1'b1)
-							instr_sb: mem_wordsize <= 2;
-							instr_sh: mem_wordsize <= 1;
-							instr_sw: mem_wordsize <= 0;
-						endcase
-						if (ENABLE_TRACE) begin
-							trace_valid <= 1;
-							trace_data <= (irq_active ? TRACE_IRQ : 0) | TRACE_ADDR | ((reg_op1 + decoded_imm) & 32'hffffffff);
-						end
-						reg_op1 <= reg_op1 + decoded_imm;
-						set_mem_do_wdata = 1;
-					end
-					if (!mem_do_prefetch && mem_done) begin
-						cpu_state <= cpu_state_fetch;
-						decoder_trigger <= 1;
-						decoder_pseudo_trigger <= 1;
-					end
-				end
-			end
 
-			cpu_state_ldmem: begin
-				latched_store <= 1;
-				if (!mem_do_prefetch || mem_done) begin
-					if (!mem_do_rdata) begin
-						(* parallel_case, full_case *)
-						case (1'b1)
-							instr_lb || instr_lbu: mem_wordsize <= 2;
-							instr_lh || instr_lhu: mem_wordsize <= 1;
-							instr_lw: mem_wordsize <= 0;
-						endcase
-						latched_is_lu <= is_lbu_lhu_lw;
-						latched_is_lh <= instr_lh;
-						latched_is_lb <= instr_lb;
-						if (ENABLE_TRACE) begin
-							trace_valid <= 1;
-							trace_data <= (irq_active ? TRACE_IRQ : 0) | TRACE_ADDR | ((reg_op1 + decoded_imm) & 32'hffffffff);
-						end
-						reg_op1 <= reg_op1 + decoded_imm;
-						set_mem_do_rdata = 1;
-					end
-					if (!mem_do_prefetch && mem_done) begin
-						(* parallel_case, full_case *)
-						case (1'b1)
-							latched_is_lu: reg_out <= mem_rdata_word;
-							latched_is_lh: reg_out <= $signed(mem_rdata_word[15:0]);
-							latched_is_lb: reg_out <= $signed(mem_rdata_word[7:0]);
-						endcase
-						decoder_trigger <= 1;
-						decoder_pseudo_trigger <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-				end
-			end
-		endcase
 
-		if (ENABLE_IRQ) begin
+
+		if (ENABLE_IRQ){
 			next_irq_pending = next_irq_pending | irq;
-			if(ENABLE_IRQ_TIMER && timer)
-				if (timer - 1 == 0)
-					next_irq_pending[irq_timer] = 1;
-		end
+			if(ENABLE_IRQ_TIMER){
+        when( timer === 1.U ){
+          next_irq_pending[irq_timer] = 1;   
+        }
+      }
+    }
+
 
 		if (CATCH_MISALIGN && resetn && (mem_do_rdata || mem_do_wdata)) begin
 			if (mem_wordsize == 0 && reg_op1[1:0] != 0) begin
@@ -2166,6 +2023,153 @@ module picorv32 #(
 			end
 		end
 	end
+
+
+
+
+
+}
+
+
+
+
+module picorv32 #(
+
+) (
+
+
+);
+
+
+
+
+// `ifndef PICORV32_REGS
+// 	reg [31:0] cpuregs [0:regfile_size-1];
+
+// 	integer i;
+// 	initial begin
+// 		if (REGS_INIT_ZERO) begin
+// 			for (i = 0; i < regfile_size; i = i+1)
+// 				cpuregs[i] = 0;
+// 		end
+// 	end
+// `endif
+
+// `ifdef DEBUGREGS
+// 	val dbg_reg_x0  = 0
+// 	val dbg_reg_x1  = cpuregs[1]
+// 	val dbg_reg_x2  = cpuregs[2]
+// 	val dbg_reg_x3  = cpuregs[3]
+// 	val dbg_reg_x4  = cpuregs[4]
+// 	val dbg_reg_x5  = cpuregs[5]
+// 	val dbg_reg_x6  = cpuregs[6]
+// 	val dbg_reg_x7  = cpuregs[7]
+// 	val dbg_reg_x8  = cpuregs[8]
+// 	val dbg_reg_x9  = cpuregs[9]
+// 	val dbg_reg_x10 = cpuregs[10]
+// 	val dbg_reg_x11 = cpuregs[11]
+// 	val dbg_reg_x12 = cpuregs[12]
+// 	val dbg_reg_x13 = cpuregs[13]
+// 	val dbg_reg_x14 = cpuregs[14]
+// 	val dbg_reg_x15 = cpuregs[15]
+// 	val dbg_reg_x16 = cpuregs[16]
+// 	val dbg_reg_x17 = cpuregs[17]
+// 	val dbg_reg_x18 = cpuregs[18]
+// 	val dbg_reg_x19 = cpuregs[19]
+// 	val dbg_reg_x20 = cpuregs[20]
+// 	val dbg_reg_x21 = cpuregs[21]
+// 	val dbg_reg_x22 = cpuregs[22]
+// 	val dbg_reg_x23 = cpuregs[23]
+// 	val dbg_reg_x24 = cpuregs[24]
+// 	val dbg_reg_x25 = cpuregs[25]
+// 	val dbg_reg_x26 = cpuregs[26]
+// 	val dbg_reg_x27 = cpuregs[27]
+// 	val dbg_reg_x28 = cpuregs[28]
+// 	val dbg_reg_x29 = cpuregs[29]
+// 	val dbg_reg_x30 = cpuregs[30]
+// 	val dbg_reg_x31 = cpuregs[31]
+// `endif
+
+
+
+	// reg [63:0] new_ascii_instr;
+
+
+	// always @* begin
+	// 	new_ascii_instr = "";
+
+	// 	if (instr_lui)      new_ascii_instr = "lui";
+	// 	if (instr_auipc)    new_ascii_instr = "auipc";
+	// 	if (instr_jal)      new_ascii_instr = "jal";
+	// 	if (instr_jalr)     new_ascii_instr = "jalr";
+
+	// 	if (instr_beq)      new_ascii_instr = "beq";
+	// 	if (instr_bne)      new_ascii_instr = "bne";
+	// 	if (instr_blt)      new_ascii_instr = "blt";
+	// 	if (instr_bge)      new_ascii_instr = "bge";
+	// 	if (instr_bltu)     new_ascii_instr = "bltu";
+	// 	if (instr_bgeu)     new_ascii_instr = "bgeu";
+
+	// 	if (instr_lb)       new_ascii_instr = "lb";
+	// 	if (instr_lh)       new_ascii_instr = "lh";
+	// 	if (instr_lw)       new_ascii_instr = "lw";
+	// 	if (instr_lbu)      new_ascii_instr = "lbu";
+	// 	if (instr_lhu)      new_ascii_instr = "lhu";
+	// 	if (instr_sb)       new_ascii_instr = "sb";
+	// 	if (instr_sh)       new_ascii_instr = "sh";
+	// 	if (instr_sw)       new_ascii_instr = "sw";
+
+	// 	if (instr_addi)     new_ascii_instr = "addi";
+	// 	if (instr_slti)     new_ascii_instr = "slti";
+	// 	if (instr_sltiu)    new_ascii_instr = "sltiu";
+	// 	if (instr_xori)     new_ascii_instr = "xori";
+	// 	if (instr_ori)      new_ascii_instr = "ori";
+	// 	if (instr_andi)     new_ascii_instr = "andi";
+	// 	if (instr_slli)     new_ascii_instr = "slli";
+	// 	if (instr_srli)     new_ascii_instr = "srli";
+	// 	if (instr_srai)     new_ascii_instr = "srai";
+
+	// 	if (instr_add)      new_ascii_instr = "add";
+	// 	if (instr_sub)      new_ascii_instr = "sub";
+	// 	if (instr_sll)      new_ascii_instr = "sll";
+	// 	if (instr_slt)      new_ascii_instr = "slt";
+	// 	if (instr_sltu)     new_ascii_instr = "sltu";
+	// 	if (instr_xor)      new_ascii_instr = "xor";
+	// 	if (instr_srl)      new_ascii_instr = "srl";
+	// 	if (instr_sra)      new_ascii_instr = "sra";
+	// 	if (instr_or)       new_ascii_instr = "or";
+	// 	if (instr_and)      new_ascii_instr = "and";
+
+	// 	if (instr_rdcycle)  new_ascii_instr = "rdcycle";
+	// 	if (instr_rdcycleh) new_ascii_instr = "rdcycleh";
+	// 	if (instr_rdinstr)  new_ascii_instr = "rdinstr";
+	// 	if (instr_rdinstrh) new_ascii_instr = "rdinstrh";
+	// 	if (instr_fence)    new_ascii_instr = "fence";
+
+	// 	if (instr_getq)     new_ascii_instr = "getq";
+	// 	if (instr_setq)     new_ascii_instr = "setq";
+	// 	if (instr_retirq)   new_ascii_instr = "retirq";
+	// 	if (instr_maskirq)  new_ascii_instr = "maskirq";
+	// 	if (instr_waitirq)  new_ascii_instr = "waitirq";
+	// 	if (instr_timer)    new_ascii_instr = "timer";
+	// end
+
+
+	`FORMAL_KEEP reg [127:0] dbg_ascii_state;
+
+	always @* begin
+		dbg_ascii_state = "";
+		if (cpu_state == cpu_state_trap)   dbg_ascii_state = "trap";
+		if (cpu_state == cpu_state_fetch)  dbg_ascii_state = "fetch";
+		if (cpu_state == cpu_state_ld_rs1) dbg_ascii_state = "ld_rs1";
+		if (cpu_state == cpu_state_ld_rs2) dbg_ascii_state = "ld_rs2";
+		if (cpu_state == cpu_state_exec)   dbg_ascii_state = "exec";
+		if (cpu_state == cpu_state_shift)  dbg_ascii_state = "shift";
+		if (cpu_state == cpu_state_stmem)  dbg_ascii_state = "stmem";
+		if (cpu_state == cpu_state_ldmem)  dbg_ascii_state = "ldmem";
+	end
+
+
 
 	always @* begin
 `ifdef PICORV32_TESTBUG_005
