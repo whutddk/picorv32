@@ -212,7 +212,7 @@ extends Module{
   val irq_delay = RegInit(false.B)
   val irq_active = RegInit(false.B)
   val irq_mask = RegInit("hFFFFFFFF".U(32.W))
-  val irq_pending = RegNext( next_irq_pending & ~MASKED_IRQ )
+  val irq_pending = RegNext( next_irq_pending & ~MASKED_IRQ, 0.U(32.W) )
   val timer = RegInit(0.U(32.W))
 
 
@@ -280,16 +280,16 @@ extends Module{
 
   val pcpi_int_wr =
     Mux1H(Seq() ++
-      if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_wr) } ++
-      if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_wr) } ++
-      if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_wr)}
+      (if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_wr) } else {Seq()}) ++
+      (if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_wr) } else {Seq()}) ++
+      (if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_wr)} else {Seq()})
     )
 
   val pcpi_int_rd =
     Mux1H(Seq() ++ 
-      if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_rd) } ++
-      if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_rd) } ++
-      if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_rd)}
+      (if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_rd) } else {Seq()}) ++
+      (if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_rd) } else {Seq()}) ++
+      (if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_rd)} else {Seq()})
     )
 
   val pcpi_int_wait  = false.B | (if(ENABLE_PCPI)  {pcpi_wait }) | (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_wait }) | (if(ENABLE_DIV) {pcpi_div_wait })
@@ -404,14 +404,16 @@ extends Module{
   val mem_rdata_latched_noshuffle =
     if( LATCHED_MEM_RDATA ){ io.mem.rdata } else { Mux(mem_xfer, io.mem.rdata, mem_rdata_q) }
     
-  mem_rdata_latched :=
+  mem_rdata_latched := (
     if( COMPRESSED_ISA ){
       Mux(mem_la_use_prefetched_high_word, mem_16bit_buffer,
         Mux(mem_la_secondword, Cat(mem_rdata_latched_noshuffle(15,0), mem_16bit_buffer),
           Mux(mem_la_firstword, mem_rdata_latched_noshuffle(31,16), mem_rdata_latched_noshuffle)))
     } else {
       mem_rdata_latched_noshuffle
-    }
+    }    
+  )
+
 
 
 
@@ -422,7 +424,7 @@ extends Module{
 
   printf("Warning\n")
   when(mem_xfer){
-    mem_rdata_q := if(COMPRESSED_ISA) { mem_rdata_latched } else{ io.mem.rdata }
+    mem_rdata_q := (if(COMPRESSED_ISA) { mem_rdata_latched } else{ io.mem.rdata })
   }
 
   if (COMPRESSED_ISA){
@@ -785,10 +787,10 @@ extends Module{
   val dbg_insn_rs2    = Wire( UInt(5.W) );  dontTouch(dbg_insn_rs2) 
   val dbg_insn_rd     = Wire( UInt(5.W) );  dontTouch(dbg_insn_rd) 
 
-  dontTouch() reg [31:0] dbg_rs1val;
-  dontTouch() reg [31:0] dbg_rs2val;
-  dontTouch() reg dbg_rs1val_valid;
-  dontTouch() reg dbg_rs2val_valid;
+  val dbg_rs1val = Reg(UInt(32.W)); dontTouch(dbg_rs1val)
+  val dbg_rs2val = Reg(UInt(32.W)); dontTouch(dbg_rs2val)
+  val dbg_rs1val_valid = Reg(Bool()); dontTouch(dbg_rs1val_valid)
+  val dbg_rs2val_valid = Reg(Bool()); dontTouch(dbg_rs2val_valid)
 
 
 
@@ -821,7 +823,7 @@ extends Module{
 
   dbg_ascii_instr := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_ascii_instr, new_ascii_instr) ,q_ascii_instr  )
   dbg_insn_imm    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_imm, decoded_imm), q_insn_imm )
-  dbg_insn_opcode := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_opcode, Mux(&next_insn_opcode[1:0], next_insn_opcode, {16'b0, next_insn_opcode[15:0]}) ), q_insn_opcode)
+  dbg_insn_opcode := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_opcode, Mux( next_insn_opcode(1,0) === "b11".U, next_insn_opcode, next_insn_opcode(15,0) ) ), q_insn_opcode)
   dbg_insn_rs1    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rs1, decoded_rs1 ), q_insn_rs1 )
   dbg_insn_rs2    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rs2, decoded_rs2 ), q_insn_rs2 )
   dbg_insn_rd     := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rd , decoded_rd  ), q_insn_rd  )
@@ -835,7 +837,7 @@ if (DEBUGASM){
 
 if (DEBUG){
   when(dbg_next){
-    when(&dbg_insn_opcode[1:0]){
+    when(dbg_insn_opcode(1,0) === "b11".U){
       printf( s"DECODE: 0x%08x 0x%08x %-0s", dbg_insn_addr, dbg_insn_opcode, Mux(dbg_ascii_instr, dbg_ascii_instr, "UNKNOWN") )
     } .otherwise{
       printf( s"DECODE: 0x%08x 0x%04x %-0s", dbg_insn_addr, dbg_insn_opcode(15,0), Mux(dbg_ascii_instr, dbg_ascii_instr, "UNKNOWN") )
@@ -850,8 +852,8 @@ if (DEBUG){
     instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
     instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
     instr_jalr    := mem_rdata_latched(6,0) === "b1100111".U & mem_rdata_latched(14,12) === "b000".U
-    instr_retirq  := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U} else {false.B}
-    instr_waitirq := if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000100".U} else {false.B}
+    instr_retirq  := (if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U} else {false.B})
+    instr_waitirq := (if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000100".U} else {false.B})
 
     is_beq_bne_blt_bge_bltu_bgeu := mem_rdata_latched(6,0) === "b1100011".U
     is_lb_lh_lw_lbu_lhu          := mem_rdata_latched(6,0) === "b0000011".U
@@ -877,14 +879,14 @@ if (DEBUG){
 
     if(ENABLE_IRQ){
       when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U ){
-        decoded_rs1 := if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}; // instr_retirq
+        decoded_rs1 := (if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}) // instr_retirq
       }
 
     }
 
 
     compressed_instr := 
-      if (COMPRESSED_ISA){ mem_rdata_latched(1,0) =/= "b11".U } else { false.B }
+      (if (COMPRESSED_ISA){ mem_rdata_latched(1,0) =/= "b11".U } else { false.B })
 
 
 
@@ -928,7 +930,7 @@ if (DEBUG){
             decoded_rs1 := 0.U
           } .elsewhen( mem_rdata_latched(15,13) === "b011".U ){
             when(mem_rdata_latched.extract(12) | mem_rdata_latched(6,2) ){
-              when(mem_rdata_latched[11:7] == 2){ // C.ADDI16SP
+              when(mem_rdata_latched(11,7) === "b00010".U){ // C.ADDI16SP
                 is_alu_reg_imm := 1.U
                 decoded_rd     := mem_rdata_latched(11,7)
                 decoded_rs1    := mem_rdata_latched(11,7)
@@ -1014,15 +1016,15 @@ if (DEBUG){
     }   
   }
 
-  when(decoder_trigger && !decoder_pseudo_trigger){
-    pcpi_insn := if(WITH_PCPI) {mem_rdata_q} else {0.U}
+  when(decoder_trigger & ~decoder_pseudo_trigger){
+    pcpi_insn := (if(WITH_PCPI) {mem_rdata_q} else {0.U})
 
-    instr_beq   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b000".U
-    instr_bne   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b001".U
-    instr_blt   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b100".U
-    instr_bge   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b101".U
-    instr_bltu  := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b110".U
-    instr_bgeu  := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14:12) === "b111".U
+    instr_beq   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b000".U
+    instr_bne   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b001".U
+    instr_blt   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b100".U
+    instr_bge   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b101".U
+    instr_bltu  := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b110".U
+    instr_bgeu  := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b111".U
 
     instr_lb    := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b000".U
     instr_lh    := is_lb_lh_lw_lbu_lhu & mem_rdata_q(14,12) === "b001".U
@@ -1127,7 +1129,7 @@ if (DEBUG){
       instr_jal                                           -> decoded_imm_j,
       (instr_lui | instr_auipc)                           -> mem_rdata_q(31,12) << 12,
       (instr_jalr | is_lb_lh_lw_lbu_lhu | is_alu_reg_imm) -> Cat( Fill( 20, mem_rdata_q.extract(31)), mem_rdata_q(31,20) ),
-      is_beq_bne_blt_bge_bltu_bgeu                        -> Cat( Fill( 19, mem_rdata_q.extract(31)), mem_rdata_q.extract(31), mem_rdata_q.extract(7), mem_rdata_q[30:25], mem_rdata_q[11:8], 0.U(1.W)),
+      is_beq_bne_blt_bge_bltu_bgeu                        -> Cat( Fill( 19, mem_rdata_q.extract(31)), mem_rdata_q.extract(31), mem_rdata_q.extract(7), mem_rdata_q(30,25), mem_rdata_q(11,8), 0.U(1.W)),
       is_sb_sh_sw                                         -> Cat( Fill( 20, mem_rdata_q.extract(31)), mem_rdata_q(31,25), mem_rdata_q(11,7)),
     ))
   }
@@ -1206,7 +1208,6 @@ if (DEBUG){
   val pcpi_timeout_counter = RegInit("hF".U(4.W))
   val pcpi_timeout = RegInit(false.B)
 
-  val next_irq_pending = Wire(UInt(32.W))
   val do_waitirq = Reg(Bool())
 
   val alu_out_q = RegNext(alu_out)
@@ -1249,12 +1250,12 @@ if (DEBUG){
       ( is_slti_blt_slt    & ~instr_beq & ~instr_bne & ~instr_bge & ~instr_bgeu ) -> alu_lts,
       ( is_sltiu_bltu_sltu & ~instr_beq & ~instr_bne & ~instr_bge & ~instr_bgeu ) -> alu_ltu,
     ) ++
-    if( !TWO_CYCLE_COMPARE ){
+    (if( ~TWO_CYCLE_COMPARE ){
       Seq(
         is_slti_blt_slt     -> alu_lts,
         is_sltiu_bltu_sltu  -> alu_ltu,      
       )
-    } else { Seq() }
+    } else { Seq() })
   )
 
   val alu_out = Mux1H(Seq(
@@ -1263,10 +1264,10 @@ if (DEBUG){
       ( instr_xori | instr_xor ) -> ( reg_op1 ^ reg_op2 ),
       ( instr_ori  | instr_or  ) -> ( reg_op1 | reg_op2 ),
       ( instr_andi | instr_and ) -> ( reg_op1 & reg_op2 ),
-    ) ++ if( BARREL_SHIFTER ){
+    ) ++ (if( BARREL_SHIFTER ){ Seq(
       (instr_sll | instr_slli) -> alu_shl,
-      (instr_srl | instr_srli | instr_sra | instr_srai) -> alu_shr,
-    } else { Seq() }
+      (instr_srl | instr_srli | instr_sra | instr_srai) -> alu_shr,      
+      )} else { Seq() })
   )
 
 
@@ -1274,14 +1275,11 @@ if (DEBUG){
 
   val clear_prefetched_high_word_q = RegNext( clear_prefetched_high_word )
 
-  clear_prefetched_high_word :=
-    MuxCase( clear_prefetched_high_word_q, Array(
-      (~prefetched_high_word -> false.B) ++ 
-      if( COMPRESSED_ISA ){
-        Array( latched_branch | irq_state | reset)
-      } else { Array() }
-    ) )
 
+	clear_prefetched_high_word :=
+    Mux( latched_branch | irq_state | reset, ( if(COMPRESSED_ISA) { true.B } else {false.B}),
+      Mux( ~prefetched_high_word, false.B, clear_prefetched_high_word_q )
+    )
 
 
 
@@ -1298,15 +1296,13 @@ if (DEBUG){
     Mux1H(Seq(
         (cpu_state == cpu_state_fetch) & latched_branch                  -> reg_pc + Mux(latched_compr, 2.U, 4.U),
         (cpu_state == cpu_state_fetch) & latched_store & ~latched_branch -> Mux(latched_stalu, alu_out_q, reg_out),
-      ) ++ if( ENABLE_IRQ ) { Seq(
+      ) ++ (if( ENABLE_IRQ ) { Seq(
         (cpu_state == cpu_state_fetch) & irq_state.extract(0) -> reg_next_pc | latched_compr,
         (cpu_state == cpu_state_fetch) & irq_state.extract(1) -> irq_pending & ~irq_mask        
-      )} else { Seq() }
+      )} else { Seq() })
     )
 
 
-  wire[31:0] cpuregs_rdata1;
-  wire[31:0] cpuregs_rdata2;
 
   val cpuregs_waddr = latched_rd
 
@@ -1321,8 +1317,8 @@ if (DEBUG){
     cpuregs(cpuregs_waddr(4,0)) := cpuregs_wrdata
   }
 
-  cpuregs_rdata1 := cpuregs(cpuregs_raddr1(4,0))
-  cpuregs_rdata2 := cpuregs(cpuregs_raddr2(4,0))
+  val cpuregs_rdata1 = cpuregs(cpuregs_raddr1(4,0))
+  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2(4,0))
 
 
   val cpuregs_rs1 = Wire(UInt(32.W))
@@ -1338,12 +1334,14 @@ if (DEBUG){
     cpuregs_rs2 := cpuregs_rs1
   }
 
-  launch_next_insn := 
+  launch_next_insn := (
     if( !ENABLE_IRQ ){
       (cpu_state === cpu_state_fetch) & decoder_trigger
     } else {
       (cpu_state === cpu_state_fetch) & decoder_trigger & ( irq_delay | irq_active | ~(irq_pending & ~irq_mask))
-    }
+    }    
+  )
+
   
 
 
@@ -1398,54 +1396,49 @@ if (DEBUG){
 
 
   if( ENABLE_IRQ ){
-    next_irq_pending := irq_pending & LATCHED_IRQ
+    var next_irq_pending = irq_pending & LATCHED_IRQ
 
     when(irq_state.extract(1) & cpu_state_fetch === cpu_state ){
-      next_irq_pending := next_irq_pending & irq_mask;            
+      next_irq_pending = next_irq_pending & irq_mask
     } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
       if( CATCH_ILLINSN ){
         when( instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active ){
-          next_irq_pending.extract(irq_ebreak) := 1;           
+          next_irq_pending = next_irq_pending | (1.U << irq_ebreak)
         }
       }
     } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
       if( WITH_PCPI & CATCH_ILLINSN ){
         when( instr_trap & ~pcpi_int_ready & (pcpi_timeout | instr_ecall_ebreak) & ~irq_mask.extract(irq_ebreak) & ~irq_active ){
-          next_irq_pending.extract(irq_ebreak) := 1
+          next_irq_pending = next_irq_pending | (1.U << irq_ebreak)
         }        
       }
     }
 
-    next_irq_pending := next_irq_pending | irq
+    next_irq_pending = next_irq_pending | irq
 
     if(ENABLE_IRQ_TIMER){
       when( timer === 1.U ){
-        next_irq_pending.extract(irq_timer) := 1;   
+        next_irq_pending = next_irq_pending | (1.U << irq_timer)
       }
     }
 
 
     if (CATCH_MISALIGN){
-      when( ~reset & (mem_do_rdata | mem_do_wdata)){
-        when((mem_wordsize === 0.U & reg_op1[1:0] =/= 0.U ) & ( ~irq_mask[irq_buserror] & ~irq_active) ){
-          next_irq_pending[irq_buserror] = 1
+      when( (mem_do_rdata | mem_do_wdata)){
+        when((mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U ) & ( ~irq_mask.extract(irq_buserror) & ~irq_active) ){
+          next_irq_pending = next_irq_pending | (1.U << irq_buserror)
         }
-        when((mem_wordsize === 1.U & reg_op1[0] =/= 0.U) & ( ~irq_mask[irq_buserror] & ~irq_active)) {
-          next_irq_pending[irq_buserror] = 1
+        when((mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U) & ( ~irq_mask.extract(irq_buserror) & ~irq_active)) {
+          next_irq_pending = next_irq_pending | (1.U << irq_buserror)
         }          
       }
 
-      when( ~reset && mem_do_rinst && (COMPRESSED_ISA ? reg_pc[0] : |reg_pc[1:0])){
-        when( ~irq_mask[irq_buserror] & ~irq_active){
-          next_irq_pending[irq_buserror] = 1
+      when( mem_do_rinst & (if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc(1,0) =/= 0.U})){
+        when( ~irq_mask.extract(irq_buserror) & ~irq_active){
+          next_irq_pending = next_irq_pending | (1.U << irq_buserror)
         }          
       }    
     }
-  }
-
-
-  when( reset ){
-    next_irq_pending := 0.U
   }
 
 
@@ -1542,7 +1535,7 @@ if (DEBUG){
         if (ENABLE_IRQ_QREGS){
           latched_rd := irqregs_offset | irq_state.extract(0)
         } else{
-          latched_rd := Mux(irq_state.extract(0) ? 4.U : 3.U)
+          latched_rd := Mux(irq_state.extract(0), 4.U, 3.U)
         }
       } .elsewhen( (decoder_trigger | do_waitirq) & instr_waitirq ){
         when(irq_pending =/= 0.U){
@@ -1720,7 +1713,7 @@ if (DEBUG){
       dbg_rs1val_valid := true.B
       reg_sh := decoded_rs2
       cpu_state := cpu_state_shift
-    } .elsewhen( if( BARREL_SHIFTER ){is_jalr_addi_slti_sltiu_xori_ori_andi, is_slli_srli_srai} else {false.B} ){
+    } .elsewhen( if( BARREL_SHIFTER ){is_jalr_addi_slti_sltiu_xori_ori_andi | is_slli_srli_srai} else {false.B} ){
       printf(s"LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1

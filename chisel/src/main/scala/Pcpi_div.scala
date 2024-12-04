@@ -29,7 +29,7 @@ import chisel3.util._
  ***************************************************************/
 
 class Pcpi_div extends Module{
-  val io: new PCPI_Access_Bundle = IO(new PCPI_Access_Bundle)
+  val io: PCPI_Access_Bundle = IO(new PCPI_Access_Bundle)
 
 	val pcpi_wr  = Reg(Bool());    io.wr := pcpi_wr
 	val pcpi_rd = Reg(UInt(32.W)); io.rd := pcpi_rd
@@ -78,10 +78,10 @@ class Pcpi_div extends Module{
       
       if( RISCV_FORMAL_ALTOPS ){
         pcpi_rd := Mux1H(Seq(
-          instr_div  -> (io.rs1 - io.rs2) ^ 32'h7f8529ec,
-          instr_divu -> (io.rs1 - io.rs2) ^ 32'h10e8fd70,
-          instr_rem  -> (io.rs1 - io.rs2) ^ 32'h8da68fa5,
-          instr_remu -> (io.rs1 - io.rs2) ^ 32'h3138d0e1,
+          instr_div  -> (io.rs1 - io.rs2) ^ "h7f8529ec".U,
+          instr_divu -> (io.rs1 - io.rs2) ^ "h10e8fd70".U,
+          instr_rem  -> (io.rs1 - io.rs2) ^ "h8da68fa5".U,
+          instr_remu -> (io.rs1 - io.rs2) ^ "h3138d0e1".U,
         ))      
       } else{
         pcpi_rd := 
