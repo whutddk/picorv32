@@ -58,42 +58,42 @@ class PCPI_Access_Bundle extends Bundle{
   val rs2   = Output(UInt(32.W))
   val wr    = Input(Bool())
   val rd    = Input((UInt(32.W)))
-  val wait  = Input(Bool())
+  val waiting  = Input(Bool())
 }
 
 
 class Riscv_Format_Bundle extends Bundle{
-  valid = Bool()
-  order = UInt(64.W)
-  insn  = UInt(32.W)
-  trap  = Bool()
-  halt  = Bool()
-  intr  = Bool()
-  mode  = UInt(2.W)
-  ixl   = UInt(2.W)
-  rs1_addr  = UInt(5.W)
-  rs2_addr  = UInt(5.W)
-  rs1_rdata = UInt(32.W)
-  rs2_rdata = UInt(32.W)
-  rd_addr   = UInt(5.W)
-  rd_wdata  = UInt(32.W)
-  pc_rdata  = UInt(32.W)
-  pc_wdata  = UInt(32.W)
-  mem_addr  = UInt(32.W)
-  mem_rmask = UInt(4.W)
-  mem_wmask = UInt(4.W)
-  mem_rdata = UInt(32.W)
-  mem_wdata = UInt(32.W)
+  val valid = Bool()
+  val order = UInt(64.W)
+  val insn  = UInt(32.W)
+  val trap  = Bool()
+  val halt  = Bool()
+  val intr  = Bool()
+  val mode  = UInt(2.W)
+  val ixl   = UInt(2.W)
+  val rs1_addr  = UInt(5.W)
+  val rs2_addr  = UInt(5.W)
+  val rs1_rdata = UInt(32.W)
+  val rs2_rdata = UInt(32.W)
+  val rd_addr   = UInt(5.W)
+  val rd_wdata  = UInt(32.W)
+  val pc_rdata  = UInt(32.W)
+  val pc_wdata  = UInt(32.W)
+  val mem_addr  = UInt(32.W)
+  val mem_rmask = UInt(4.W)
+  val mem_wmask = UInt(4.W)
+  val mem_rdata = UInt(32.W)
+  val mem_wdata = UInt(32.W)
 
-  csr_mcycle_rmask = UInt(64.W)
-  csr_mcycle_wmask = UInt(64.W)
-  csr_mcycle_rdata = UInt(64.W)
-  csr_mcycle_wdata = UInt(64.W)
+  val csr_mcycle_rmask = UInt(64.W)
+  val csr_mcycle_wmask = UInt(64.W)
+  val csr_mcycle_rdata = UInt(64.W)
+  val csr_mcycle_wdata = UInt(64.W)
 
-  csr_minstret_rmask= UInt(64.W)
-  csr_minstret_wmask= UInt(64.W)
-  csr_minstret_rdata= UInt(64.W)
-  csr_minstret_wdata= UInt(64.W)
+  val csr_minstret_rmask= UInt(64.W)
+  val csr_minstret_wmask= UInt(64.W)
+  val csr_minstret_rdata= UInt(64.W)
+  val csr_minstret_wdata= UInt(64.W)
 }
 
 class Picorv32(
@@ -125,6 +125,8 @@ class Picorv32(
   STACKADDR: UInt = "hffffffff".U(32.W),
 )
 extends Module{
+  def RISCV_FORMAL = true
+
 
   class Picorv32IO extends Bundle{
   val trap = Output(Bool())
@@ -134,6 +136,7 @@ extends Module{
 
   val irq = Input(UInt(32.W))
   val eoi = Output(UInt(32.W))
+
 
   val rvfi = if( RISCV_FORMAL ){
     Some(Output(new Riscv_Format_Bundle))
@@ -168,11 +171,13 @@ extends Module{
   def irq_ebreak   = 1
   def irq_buserror = 2
 
-  def irqregs_offset = if(ENABLE_REGS_16_31) {32} else {16}
-  def regfile_size   = if(ENABLE_REGS_16_31) {32} else { if(ENABLE_IRQ*ENABLE_IRQ_QREGS) {20} else {16}  }
-  def regindex_bits  = if(ENABLE_REGS_16_31) {5 } else { if(ENABLE_IRQ*ENABLE_IRQ_QREGS) { 5} else { 4}  }
+  def irqregs_offset = if(ENABLE_REGS_16_31) {32.U} else {16.U}
+  def regfile_size   = if(ENABLE_REGS_16_31) { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) {36} else {32} } else { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) {20} else {16} }
+  def regindex_bits  = if(ENABLE_REGS_16_31) { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) { 6} else { 5} } else { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) { 5} else { 4} }
 
-  def WITH_PCPI = ENABLE_PCPI || ENABLE_MUL || ENABLE_FAST_MUL || ENABLE_DIV;
+
+
+  def WITH_PCPI = ENABLE_PCPI | ENABLE_MUL | ENABLE_FAST_MUL | ENABLE_DIV
 
   def TRACE_BRANCH = Cat( "b0001".U(4.W), 0.U(32.W) )
   def TRACE_ADDR   = Cat( "b0010".U(4.W), 0.U(32.W) )
@@ -186,11 +191,11 @@ extends Module{
 
   val count_instr = if(ENABLE_COUNTERS64 ) { RegInit(0.U(64.W)) } else { RegInit(0.U(32.W)) }
 
-  val reg_pc      = RegInit(PROGADDR_RESET(32.W))
-  val reg_next_pc = RegInit(PROGADDR_RESET(32.W))
+  val reg_pc      = RegInit(PROGADDR_RESET)
+  val reg_next_pc = RegInit(PROGADDR_RESET)
   val reg_op1 = Reg(UInt(32.W))
   val reg_op2 = Reg(UInt(32.W))
-  val reg_out = if( ~STACKADDR ) { RegInit(STACKADDR(32.W)) } else { Reg(UInt(32.W)) }
+  val reg_out = if( STACKADDR != "hffffffff".U(32.W) ) { RegInit(STACKADDR) } else { Reg(UInt(32.W)) }
   val reg_sh = Reg(UInt(5.W))
 
 
@@ -204,27 +209,28 @@ extends Module{
   val dbg_mem_wstrb = mem_wstrb
   val dbg_mem_rdata = io.mem.rdata
 
-  io.pcpi_rs1 := reg_op1
-  io.pcpi_rs2 := reg_op2
+  io.pcpi.rs1 := reg_op1
+  io.pcpi.rs2 := reg_op2
 
   val next_pc = Wire(UInt(32.W))
 
   val irq_delay = RegInit(false.B)
   val irq_active = RegInit(false.B)
   val irq_mask = RegInit("hFFFFFFFF".U(32.W))
-  val irq_pending = RegNext( next_irq_pending & ~MASKED_IRQ, 0.U(32.W) )
+
+  val irq_pending = RegInit(0.U(32.W))
   val timer = RegInit(0.U(32.W))
 
 
   // Internal PCPI Cores
   val pcpi_mul_wr    = Wire(Bool())
   val pcpi_mul_rd    = Wire(UInt(32.W))
-  val pcpi_mul_wait  = Wire(Bool())
+  val pcpi_mul_waiting  = Wire(Bool())
   val pcpi_mul_ready = Wire(Bool())
 
   val pcpi_div_wr    = Wire(Bool())
   val pcpi_div_rd    = Wire(UInt(32.W))
-  val pcpi_div_wait  = Wire(Bool())
+  val pcpi_div_waiting  = Wire(Bool())
   val pcpi_div_ready = Wire(Bool())
 
 
@@ -234,24 +240,24 @@ extends Module{
 
     pcpi_fast_mul.io.valid := pcpi_valid
     pcpi_fast_mul.io.insn  := pcpi_insn
-    pcpi_fast_mul.io.rs1   := pcpi_rs1
-    pcpi_fast_mul.io.rs2   := pcpi_rs2
+    pcpi_fast_mul.io.rs1   := io.pcpi.rs1
+    pcpi_fast_mul.io.rs2   := io.pcpi.rs2
 
     pcpi_mul_wr    := pcpi_fast_mul.io.wr
     pcpi_mul_rd    := pcpi_fast_mul.io.rd
-    pcpi_mul_wait  := pcpi_fast_mul.io.wait
+    pcpi_mul_waiting  := pcpi_fast_mul.io.waiting
     pcpi_mul_ready := pcpi_fast_mul.io.ready
 
   } else if(ENABLE_MUL){
     require(false, "Require Failed! Didnot implement")
     pcpi_mul_wr    := false.B
     pcpi_mul_rd    := 0.U
-    pcpi_mul_wait  := false.B
+    pcpi_mul_waiting  := false.B
     pcpi_mul_ready := false.B
   } else{
     pcpi_mul_wr    := false.B
     pcpi_mul_rd    := 0.U
-    pcpi_mul_wait  := false.B
+    pcpi_mul_waiting  := false.B
     pcpi_mul_ready := false.B
   }
 
@@ -263,37 +269,45 @@ extends Module{
 
     pcpi_div.io.valid := pcpi_valid
     pcpi_div.io.insn  := pcpi_insn
-    pcpi_div.io.rs1   := pcpi_rs1
-    pcpi_div.io.rs2   := pcpi_rs2
+    pcpi_div.io.rs1   := io.pcpi.rs1
+    pcpi_div.io.rs2   := io.pcpi.rs2
     pcpi_div_wr     := pcpi_div.io.wr
     pcpi_div_rd     := pcpi_div.io.rd
-    pcpi_div_wait   := pcpi_div.io.wait
+    pcpi_div_waiting   := pcpi_div.io.waiting
     pcpi_div_ready  := pcpi_div.io.ready
   
   } else {
     pcpi_div_wr    := false.B
     pcpi_div_rd    := 0.U
-    pcpi_div_wait  := false.B
+    pcpi_div_waiting  := false.B
     pcpi_div_ready := false.B
   }
 
 
   val pcpi_int_wr =
     Mux1H(Seq() ++
-      (if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_wr) } else {Seq()}) ++
+      (if(ENABLE_PCPI) { Seq(io.pcpi.ready -> io.pcpi.wr) } else {Seq()}) ++
       (if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_wr) } else {Seq()}) ++
       (if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_wr)} else {Seq()})
     )
 
   val pcpi_int_rd =
     Mux1H(Seq() ++ 
-      (if(ENABLE_PCPI) { Seq(pcpi_ready -> pcpi_rd) } else {Seq()}) ++
+      (if(ENABLE_PCPI) { Seq(io.pcpi.ready -> io.pcpi.rd) } else {Seq()}) ++
       (if(ENABLE_MUL | ENABLE_FAST_MUL) { Seq(pcpi_mul_ready -> pcpi_mul_rd) } else {Seq()}) ++
       (if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_rd)} else {Seq()})
     )
 
-  val pcpi_int_wait  = false.B | (if(ENABLE_PCPI)  {pcpi_wait }) | (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_wait }) | (if(ENABLE_DIV) {pcpi_div_wait })
-  val pcpi_int_ready = false.B | (if(ENABLE_PCPI)  {pcpi_ready}) | (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_ready}) | (if(ENABLE_DIV) {pcpi_div_ready})
+  val pcpi_int_waiting  = false.B |
+    (if(ENABLE_PCPI)  {io.pcpi.waiting } else {false.B}) |
+    (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_waiting } else {false.B}) |
+    (if(ENABLE_DIV) {pcpi_div_waiting } else {false.B})
+
+  val pcpi_int_ready = false.B |
+    (if(ENABLE_PCPI)  {io.pcpi.ready} else {false.B}) |
+    (if(ENABLE_MUL | ENABLE_FAST_MUL) {pcpi_mul_ready} else {false.B}) |
+    (if(ENABLE_DIV) {pcpi_div_ready} else {false.B})
+
 
 
 
@@ -316,36 +330,32 @@ extends Module{
   val mem_wordsize = Reg(UInt(2.W))
 
 
-  val mem_la_wdata = 
+  io.mem_la.wdata := 
     Mux1H(Seq(
       ( mem_wordsize === 0.U ) -> reg_op2,
       ( mem_wordsize === 1.U ) -> Fill(2, reg_op2(15,0)),
       ( mem_wordsize === 2.U ) -> Fill(4, reg_op2( 7,0)),
     ))
 
-  val mem_la_wstrb = 
+  io.mem_la.wstrb := 
     Mux1H(Seq(
       ( mem_wordsize === 0.U ) -> "b1111".U,
       ( mem_wordsize === 1.U ) -> Mux( reg_op1.extract(1), "b1100".U, "b0011".U),
-      ( mem_wordsize === 2.U ) -> 1.U << reg_op1(1,0),
+      ( mem_wordsize === 2.U ) -> (1.U << reg_op1(1,0)),
     ))
 
   val mem_rdata_word = 
     Mux1H(Seq(
       ( mem_wordsize === 0.U ) -> io.mem.rdata,
-      ( mem_wordsize === 1.U ) -> Mux( reg_op1.extract(1), io.mem.rdata(31,16), io.mem.rdata(15, 0) )
+      ( mem_wordsize === 1.U ) -> Mux( reg_op1.extract(1), io.mem.rdata(31,16), io.mem.rdata(15, 0) ),
       ( mem_wordsize === 2.U ) ->
         Mux1H(Seq(
           (reg_op1(1,0) === "b00".U) -> io.mem.rdata( 7, 0),
           (reg_op1(1,0) === "b01".U) -> io.mem.rdata(15, 8),
           (reg_op1(1,0) === "b10".U) -> io.mem.rdata(23,16),
           (reg_op1(1,0) === "b11".U) -> io.mem.rdata(31,24),
-        ))
+        )),
     ))
-
-  io.mem_la.wdata := mem_la_wdata
-  io.mem_la.wstrb := mem_la_wstrb
-
 
 
 
@@ -392,17 +402,17 @@ extends Module{
 
   val mem_busy = mem_do_prefetch | mem_do_rinst | mem_do_rdata | mem_do_wdata
 
-  val mem_done = ~reset & ((mem_xfer & mem_state.orR & (mem_do_rinst | mem_do_rdata | mem_do_wdata)) | (mem_state.andR & mem_do_rinst)) &
+  val mem_done = ~reset.asBool & ((mem_xfer & mem_state.orR & (mem_do_rinst | mem_do_rdata | mem_do_wdata)) | (mem_state.andR & mem_do_rinst)) &
       (~mem_la_firstword | (~mem_rdata_latched(1,0).andR & mem_xfer))
 
-  io.mem_la.write := ~reset & (mem_state === 0.U) & mem_do_wdata
-  io.mem_la.read  := ~reset & ((~mem_la_use_prefetched_high_word & (mem_state === 0.U) & (mem_do_rinst | mem_do_prefetch | mem_do_rdata)) |
+  io.mem_la.write := ~reset.asBool & (mem_state === 0.U) & mem_do_wdata
+  io.mem_la.read  := ~reset.asBool & ((~mem_la_use_prefetched_high_word & (mem_state === 0.U) & (mem_do_rinst | mem_do_prefetch | mem_do_rdata)) |
       (if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg) & ~mem_la_secondword & mem_rdata_latched(1,0).andR} else {false.B}))
 
   io.mem_la.addr := Mux( mem_do_prefetch | mem_do_rinst, Cat(next_pc(31,2) + mem_la_firstword_xfer, 0.U(2.W)), Cat(reg_op1(31,2), 0.U(2.W)))
 
   val mem_rdata_latched_noshuffle =
-    if( LATCHED_MEM_RDATA ){ io.mem.rdata } else { Mux(mem_xfer, io.mem.rdata, mem_rdata_q) }
+    (if( LATCHED_MEM_RDATA ){ io.mem.rdata } else { Mux(mem_xfer, io.mem.rdata, mem_rdata_q) })
     
   mem_rdata_latched := (
     if( COMPRESSED_ISA ){
@@ -438,8 +448,8 @@ extends Module{
           mem_rdata_q(14,12) := "b010".U
         } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){// C.SW
           mem_rdata_q(31,25) := Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched.extract(12))
-          mem_rdata_q(11: 7) := Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)) 
-          mem_rdata_q(14:12) := "b010".U
+          mem_rdata_q(11, 7) := Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)) 
+          mem_rdata_q(14,12) := "b010".U
         }        
       } .elsewhen( mem_rdata_latched(1,0) === "b01".U ){
         when(mem_rdata_latched(15,13) === "b000".U){ // C.ADDI
@@ -530,7 +540,7 @@ extends Module{
 
 
 
-  when(~reset & ~io.trap) {
+  when(~reset.asBool & ~io.trap) {
     when(mem_do_prefetch | mem_do_rinst | mem_do_rdata){
       assert(~mem_do_wdata)
     }
@@ -557,12 +567,12 @@ extends Module{
     mem_la_secondword := false.B
     prefetched_high_word := false.B      
   } .otherwise{
-    when(mem_la_read | mem_la_write) {
-      mem_addr  := mem_la_addr
-      mem_wstrb := mem_la_wstrb & Fill(4, mem_la_write)
+    when( io.mem_la.read | io.mem_la.write) {
+      mem_addr  := io.mem_la.addr
+      mem_wstrb := io.mem_la.wstrb & Fill(4, io.mem_la.write)
     }
-    when(mem_la_write) {
-      mem_wdata := mem_la_wdata
+    when(io.mem_la.write) {
+      mem_wdata := io.mem_la.wdata
     }
 
     when( mem_state === 0.U ){
@@ -584,18 +594,18 @@ extends Module{
       assert(mem_instr === (mem_do_prefetch | mem_do_rinst))
       when(mem_xfer){
         if (COMPRESSED_ISA) {
-          when(mem_la_read){
+          when(io.mem_la.read){
             mem_valid := true.B
             mem_la_secondword := true.B
             when(~mem_la_use_prefetched_high_word){
-              mem_16bit_buffer := mem_rdata(31,16)
+              mem_16bit_buffer := io.mem.rdata(31,16)
             }
           } .otherwise{
             mem_valid := false.B
             mem_la_secondword := false.B
             when( ~mem_do_rdata ){
-              when(~mem_rdata(1,0).andR | mem_la_secondword){
-                mem_16bit_buffer := mem_rdata(31,16)
+              when(~io.mem.rdata(1,0).andR | mem_la_secondword){
+                mem_16bit_buffer := io.mem.rdata(31,16)
                 prefetched_high_word := true.B
               } .otherwise{
                 prefetched_high_word := false.B
@@ -812,7 +822,6 @@ extends Module{
   }
 
 
-  val cached_ascii_instr = RegEnable(new_ascii_instr, decoder_trigger_q)
   val cached_insn_imm    = RegEnable(decoded_imm, decoder_trigger_q)
   val cached_insn_opcode = RegEnable( Mux( next_insn_opcode(1,0) === "b11".U, next_insn_opcode, next_insn_opcode(15,0) ), decoder_trigger_q)
   val cached_insn_rs1 = RegEnable(decoded_rs1, decoder_trigger_q)
@@ -821,7 +830,7 @@ extends Module{
 
   val dbg_insn_addr  = RegEnable(next_pc, launch_next_insn)
 
-  dbg_ascii_instr := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_ascii_instr, new_ascii_instr) ,q_ascii_instr  )
+
   dbg_insn_imm    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_imm, decoded_imm), q_insn_imm )
   dbg_insn_opcode := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_opcode, Mux( next_insn_opcode(1,0) === "b11".U, next_insn_opcode, next_insn_opcode(15,0) ) ), q_insn_opcode)
   dbg_insn_rs1    := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rs1, decoded_rs1 ), q_insn_rs1 )
@@ -829,25 +838,10 @@ extends Module{
   dbg_insn_rd     := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rd , decoded_rd  ), q_insn_rd  )
 
 
-if (DEBUGASM){
-  when(dbg_next){
-    printf( s"debugasm %x %x %s", dbg_insn_addr, dbg_insn_opcode, Mux(dbg_ascii_instr, dbg_ascii_instr, "*") )
-  }  
-}
-
-if (DEBUG){
-  when(dbg_next){
-    when(dbg_insn_opcode(1,0) === "b11".U){
-      printf( s"DECODE: 0x%08x 0x%08x %-0s", dbg_insn_addr, dbg_insn_opcode, Mux(dbg_ascii_instr, dbg_ascii_instr, "UNKNOWN") )
-    } .otherwise{
-      printf( s"DECODE: 0x%08x 0x%04x %-0s", dbg_insn_addr, dbg_insn_opcode(15,0), Mux(dbg_ascii_instr, dbg_ascii_instr, "UNKNOWN") )
-    }
-
-  }  
-}
 
 
-  when(mem_do_rinst && mem_done){
+
+  when(mem_do_rinst & mem_done){
     instr_lui     := mem_rdata_latched(6,0) === "b0110111".U
     instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
     instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
@@ -862,7 +856,7 @@ if (DEBUG){
     is_alu_reg_reg               := mem_rdata_latched(6,0) === "b0110011".U
 
     {
-      val temp = Cat( Fill(11, mem_rdata_latched.extract(31) ) ,mem_rdata_latched(31:12), 0.U(1.W) )
+      val temp = Cat( Fill(11, mem_rdata_latched.extract(31) ), mem_rdata_latched(31,12), 0.U(1.W) )
       decoded_imm_j := Cat( temp(31,20), temp(8,1), temp.extract(9), temp(19,10), temp.extract(0) )
     }
 
@@ -881,7 +875,6 @@ if (DEBUG){
       when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U ){
         decoded_rs1 := (if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}) // instr_retirq
       }
-
     }
 
 
@@ -929,7 +922,7 @@ if (DEBUG){
             decoded_rd  := mem_rdata_latched(11,7)
             decoded_rs1 := 0.U
           } .elsewhen( mem_rdata_latched(15,13) === "b011".U ){
-            when(mem_rdata_latched.extract(12) | mem_rdata_latched(6,2) ){
+            when(mem_rdata_latched.extract(12) | mem_rdata_latched(6,2) =/= 0.U ){
               when(mem_rdata_latched(11,7) === "b00010".U){ // C.ADDI16SP
                 is_alu_reg_imm := 1.U
                 decoded_rd     := mem_rdata_latched(11,7)
@@ -978,7 +971,7 @@ if (DEBUG){
               decoded_rs2 := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2))
             }            
           } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LWSP
-            when(mem_rdata_latched(11,7)){
+            when(mem_rdata_latched(11,7) =/= 0.U){
               is_lb_lh_lw_lbu_lhu := 1.U
               decoded_rd  := mem_rdata_latched(11,7)
               decoded_rs1 := 2.U
@@ -1000,7 +993,7 @@ if (DEBUG){
               decoded_rd  := 1.U
               decoded_rs1 := mem_rdata_latched(11,7)
             }
-            when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0){ // C.ADD
+            when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
               is_alu_reg_reg := 1.U
               decoded_rd  := mem_rdata_latched(11,7)
               decoded_rs1 := mem_rdata_latched(11,7)
@@ -1127,7 +1120,7 @@ if (DEBUG){
 
     decoded_imm := Mux1H(Seq(
       instr_jal                                           -> decoded_imm_j,
-      (instr_lui | instr_auipc)                           -> mem_rdata_q(31,12) << 12,
+      (instr_lui | instr_auipc)                           -> (mem_rdata_q(31,12) << 12),
       (instr_jalr | is_lb_lh_lw_lbu_lhu | is_alu_reg_imm) -> Cat( Fill( 20, mem_rdata_q.extract(31)), mem_rdata_q(31,20) ),
       is_beq_bne_blt_bge_bltu_bgeu                        -> Cat( Fill( 19, mem_rdata_q.extract(31)), mem_rdata_q.extract(31), mem_rdata_q.extract(7), mem_rdata_q(30,25), mem_rdata_q(11,8), 0.U(1.W)),
       is_sb_sh_sw                                         -> Cat( Fill( 20, mem_rdata_q.extract(31)), mem_rdata_q(31,25), mem_rdata_q(11,7)),
@@ -1178,21 +1171,21 @@ if (DEBUG){
 
   // Main State Machine
 
-  val cpu_state_trap   = "b10000000".U
-  val cpu_state_fetch  = "b01000000".U
-  val cpu_state_ld_rs1 = "b00100000".U
-  val cpu_state_ld_rs2 = "b00010000".U
-  val cpu_state_exec   = "b00001000".U
-  val cpu_state_shift  = "b00000100".U
-  val cpu_state_stmem  = "b00000010".U
-  val cpu_state_ldmem  = "b00000001".U
+  val cpu_state_trap   = "b10000000".U(8.W)
+  val cpu_state_fetch  = "b01000000".U(8.W)
+  val cpu_state_ld_rs1 = "b00100000".U(8.W)
+  val cpu_state_ld_rs2 = "b00010000".U(8.W)
+  val cpu_state_exec   = "b00001000".U(8.W)
+  val cpu_state_shift  = "b00000100".U(8.W)
+  val cpu_state_stmem  = "b00000010".U(8.W)
+  val cpu_state_ldmem  = "b00000001".U(8.W)
 
-  val cpu_state = RegInit(cpu_state_fetch(8.W));
+  val cpu_state = RegInit(cpu_state_fetch);
   val irq_state = RegInit(0.U(2.W))
 
 
 
-  val latched_store  = RegInit((if(~STACKADDR){true.B}else{false.B}))
+  val latched_store  = RegInit((if(STACKADDR != "hffffffff".U(32.W)){true.B}else{false.B}))
   val latched_stalu  = RegInit(false.B)
   val latched_branch = RegInit(false.B)
   val latched_compr = Reg(Bool())
@@ -1201,7 +1194,7 @@ if (DEBUG){
   val latched_is_lh = RegInit(false.B)
   val latched_is_lb = RegInit(false.B)
 
-  val latched_rd = if(~STACKADDR){RegInit(2.U(regindex_bits.W))} else { Reg(UInt((regindex_bits.W))) }
+  val latched_rd = if(STACKADDR != "hffffffff".U(32.W)){RegInit(2.U(regindex_bits.W))} else { Reg(UInt((regindex_bits.W))) }
 
   next_pc := latched_store & Mux(latched_branch, reg_out & "hfffffffe".U, reg_next_pc)
 
@@ -1250,7 +1243,7 @@ if (DEBUG){
       ( is_slti_blt_slt    & ~instr_beq & ~instr_bne & ~instr_bge & ~instr_bgeu ) -> alu_lts,
       ( is_sltiu_bltu_sltu & ~instr_beq & ~instr_bne & ~instr_bge & ~instr_bgeu ) -> alu_ltu,
     ) ++
-    (if( ~TWO_CYCLE_COMPARE ){
+    (if( !TWO_CYCLE_COMPARE ){
       Seq(
         is_slti_blt_slt     -> alu_lts,
         is_sltiu_bltu_sltu  -> alu_ltu,      
@@ -1277,7 +1270,7 @@ if (DEBUG){
 
 
 	clear_prefetched_high_word :=
-    Mux( latched_branch | irq_state | reset, ( if(COMPRESSED_ISA) { true.B } else {false.B}),
+    Mux( latched_branch | irq_state =/= 0.U | reset.asBool, ( if(COMPRESSED_ISA) { true.B } else {false.B}),
       Mux( ~prefetched_high_word, false.B, clear_prefetched_high_word_q )
     )
 
@@ -1294,11 +1287,11 @@ if (DEBUG){
 
   val cpuregs_wrdata =
     Mux1H(Seq(
-        (cpu_state == cpu_state_fetch) & latched_branch                  -> reg_pc + Mux(latched_compr, 2.U, 4.U),
-        (cpu_state == cpu_state_fetch) & latched_store & ~latched_branch -> Mux(latched_stalu, alu_out_q, reg_out),
+        ((cpu_state === cpu_state_fetch) & latched_branch                 ) -> (reg_pc + Mux(latched_compr, 2.U, 4.U)),
+        ((cpu_state === cpu_state_fetch) & latched_store & ~latched_branch) -> Mux(latched_stalu, alu_out_q, reg_out),
       ) ++ (if( ENABLE_IRQ ) { Seq(
-        (cpu_state == cpu_state_fetch) & irq_state.extract(0) -> reg_next_pc | latched_compr,
-        (cpu_state == cpu_state_fetch) & irq_state.extract(1) -> irq_pending & ~irq_mask        
+        ((cpu_state === cpu_state_fetch) & irq_state.extract(0)) -> (reg_next_pc | latched_compr),
+        ((cpu_state === cpu_state_fetch) & irq_state.extract(1)) -> (irq_pending & ~irq_mask),        
       )} else { Seq() })
     )
 
@@ -1311,9 +1304,9 @@ if (DEBUG){
   val cpuregs_raddr1 = if(ENABLE_REGS_DUALPORT) {decoded_rs1} else { decoded_rs }
   val cpuregs_raddr2 = if(ENABLE_REGS_DUALPORT) {decoded_rs2} else { 0.U(6.W) }
 
-  val cpuregs = Module(new MEM(UInt(32.W), 32))
+  val cpuregs = Mem(32, UInt(32.W))
 
-  when( ~reset & cpuregs_write & latched_rd ){
+  when( ~reset.asBool & cpuregs_write & latched_rd =/= 0.U ){
     cpuregs(cpuregs_waddr(4,0)) := cpuregs_wrdata
   }
 
@@ -1326,11 +1319,11 @@ if (DEBUG){
   val decoded_rs  = Wire(UInt(regindex_bits.W))
 
   if (ENABLE_REGS_DUALPORT) {
-    cpuregs_rs1 := Mux(decoded_rs1, cpuregs_rdata1, 0.U)
-    cpuregs_rs2 := Mux(decoded_rs2, cpuregs_rdata2, 0.U)
+    cpuregs_rs1 := Mux(decoded_rs1 =/= 0.U, cpuregs_rdata1, 0.U)
+    cpuregs_rs2 := Mux(decoded_rs2 =/= 0.U, cpuregs_rdata2, 0.U)
   } else {
     decoded_rs  := Mux(cpu_state === cpu_state_ld_rs2, decoded_rs2, decoded_rs1)
-    cpuregs_rs1 := Mux(decoded_rs, cpuregs_rdata1, 0.U)
+    cpuregs_rs1 := Mux(decoded_rs =/= 0.U, cpuregs_rdata1, 0.U)
     cpuregs_rs2 := cpuregs_rs1
   }
 
@@ -1382,8 +1375,8 @@ if (DEBUG){
   }
 
   if (WITH_PCPI & CATCH_ILLINSN){
-    when(pcpi_valid & ~pcpi_int_wait){
-      when(pcpi_timeout_counter){
+    when(pcpi_valid & ~pcpi_int_waiting){
+      when(pcpi_timeout_counter =/= 0.U){
         pcpi_timeout_counter := pcpi_timeout_counter - 1.U          
       }
     } .otherwise{
@@ -1414,7 +1407,7 @@ if (DEBUG){
       }
     }
 
-    next_irq_pending = next_irq_pending | irq
+    next_irq_pending = next_irq_pending | io.irq
 
     if(ENABLE_IRQ_TIMER){
       when( timer === 1.U ){
@@ -1438,6 +1431,10 @@ if (DEBUG){
           next_irq_pending = next_irq_pending | (1.U << irq_buserror)
         }          
       }    
+    }
+
+    when(true.B){
+      irq_pending := next_irq_pending & ~MASKED_IRQ
     }
   }
 
@@ -1468,9 +1465,7 @@ if (DEBUG){
 
   trace_valid := false.B
 
-  if (~ENABLE_TRACE){
-    trace_data := 0.U
-  }
+
 
 
   io.trap := RegNext(cpu_state === cpu_state_trap)
@@ -1506,8 +1501,14 @@ if (DEBUG){
       when(latched_trace){
         latched_trace := false.B
         trace_valid := true.B
-        trace_data := Mux(latched_branch, Mux(irq_active, TRACE_IRQ, 0) | TRACE_BRANCH | (current_pc & "hfffffffe".U), Mux(irq_active, TRACE_IRQ, 0) | Mux(latched_stalu, alu_out_q, reg_out)) 
+        trace_data :=
+          Mux(latched_branch,
+            Mux(irq_active, TRACE_IRQ, 0.U) | TRACE_BRANCH | (current_pc & "hfffffffe".U),
+            Mux(irq_active, TRACE_IRQ, 0.U) | Mux(latched_stalu, alu_out_q, reg_out)
+          ) 
       }
+    } else{
+      trace_data := 0.U
     }
 
 
@@ -1529,7 +1530,7 @@ if (DEBUG){
 
 
     if (ENABLE_IRQ){
-      when((decoder_trigger & ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state){
+      when((decoder_trigger & ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state =/= 0.U ){
         irq_state := Mux(irq_state === "b00".U, "b01".U, Mux(irq_state === "b01".U, "b10".U, "b00".U))
         latched_compr := latched_compr
         if (ENABLE_IRQ_QREGS){
@@ -1547,7 +1548,7 @@ if (DEBUG){
           do_waitirq := true.B
         }
       } .elsewhen(decoder_trigger){
-        printf(s"-- %-0t", $time)
+        // printf(s"-- %-0t", $time)
         irq_delay := irq_active
         reg_next_pc := current_pc + Mux(compressed_instr, 2.U, 4.U)
         if (ENABLE_TRACE){
@@ -1568,7 +1569,7 @@ if (DEBUG){
       }
     } else {
       when(decoder_trigger){
-        printf(s"-- %-0t", $time)
+        // printf(s"-- %-0t", $time)
         irq_delay := irq_active
         reg_next_pc := current_pc + Mux(compressed_instr, 2.U, 4.U)
         if (ENABLE_TRACE){
@@ -1633,7 +1634,7 @@ if (DEBUG){
             latched_store := pcpi_int_wr
             cpu_state     := cpu_state_fetch
           } .elsewhen(if (CATCH_ILLINSN) {pcpi_timeout | instr_ecall_ebreak} else {false.B}) {
-            pcpi_valid = false.B 
+            pcpi_valid := false.B 
           }
         } else {
           cpu_state := cpu_state_ld_rs2;              
@@ -1642,7 +1643,7 @@ if (DEBUG){
 
       if( CATCH_ILLINSN ){
         printf( s"EBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc)
-        when(if (ENABLE_IRQ) {!irq_mask[irq_ebreak] & !irq_active} else {false.B}){
+        when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
           cpu_state := cpu_state_fetch
         } .otherwise{
           cpu_state := cpu_state_trap
@@ -1655,7 +1656,7 @@ if (DEBUG){
         reg_out := count_instr(31,0)
       }
       if(ENABLE_COUNTERS64){
-        when(instr_rdinstrh && ){
+        when(instr_rdinstrh){
           reg_out := count_instr(63,32)
         } .elsewhen(instr_rdcycleh){
           reg_out := count_cycle(63,32)
@@ -1693,7 +1694,7 @@ if (DEBUG){
       latched_store := true.B
       reg_out := irq_mask
       printf(s"LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1)
-      irq_mask := (if( MASKED_IRQ ) {true.B} else {cpuregs_rs1})
+      irq_mask := cpuregs_rs1 | MASKED_IRQ
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_fetch
@@ -1718,7 +1719,7 @@ if (DEBUG){
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      reg_op2 := if( BARREL_SHIFTER ){ Mux(is_slli_srli_srai, decoded_rs2, decoded_imm) } else { idecoded_imm }
+      reg_op2 := (if( BARREL_SHIFTER ){ Mux(is_slli_srli_srai, decoded_rs2, decoded_imm) } else { decoded_imm })
       if (TWO_CYCLE_ALU){
         alu_wait := true.B
       } else {
@@ -1744,7 +1745,7 @@ if (DEBUG){
           cpu_state := cpu_state_shift
         } .otherwise{
           when( if(TWO_CYCLE_ALU) {true.B} else {if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}}) {
-            alu_wait_2 := if( TWO_CYCLE_ALU & TWO_CYCLE_COMPARE ) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}
+            alu_wait_2 := (if( TWO_CYCLE_ALU & TWO_CYCLE_COMPARE ) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
             alu_wait := true.B
           } .otherwise{
             mem_do_rinst := mem_do_prefetch
@@ -1788,7 +1789,7 @@ if (DEBUG){
       cpu_state := cpu_state_shift
     } .otherwise{
       when( if (TWO_CYCLE_ALU) {true.B} else { if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B} } ){
-        alu_wait_2 := if(TWO_CYCLE_ALU & TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}
+        alu_wait_2 := (if(TWO_CYCLE_ALU & TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
         alu_wait := true.B
       } .otherwise{
         mem_do_rinst := mem_do_prefetch
@@ -1804,8 +1805,8 @@ if (DEBUG){
       alu_wait := alu_wait_2
     } .elsewhen(is_beq_bne_blt_bge_bltu_bgeu){
       latched_rd := 0.U
-      latched_store  := if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0}
-      latched_branch := if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0}
+      latched_store  := (if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0})
+      latched_branch := (if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0})
       when(mem_done){
         cpu_state := cpu_state_fetch;          
       }
@@ -1828,16 +1829,16 @@ if (DEBUG){
       cpu_state := cpu_state_fetch
     } .elsewhen( if(TWO_STAGE_SHIFT) {reg_sh >= 4.U} else {false.B} ){
       reg_op1 := Mux1H(Seq(
-        ( instr_slli | instr_sll ) -> reg_op1 << 4
-        ( instr_srli | instr_srl ) -> reg_op1 >> 4
-        ( instr_srai | instr_sra ) -> Cat( Fill(4, reg_op1.extract(31)), reg_op1 ) >> 4
+        ( instr_slli | instr_sll ) -> (reg_op1 << 4),
+        ( instr_srli | instr_srl ) -> (reg_op1 >> 4),
+        ( instr_srai | instr_sra ) -> (Cat( Fill(4, reg_op1.extract(31)), reg_op1 ) >> 4),
       ))
       reg_sh := reg_sh - 4.U
     } .otherwise{
       reg_op1 := Mux1H(Seq(
-        ( instr_slli | instr_sll ) -> reg_op1 << 1
-        ( instr_srli | instr_srl ) -> reg_op1 >> 1
-        ( instr_srai | instr_sra ) -> Cat( Fill(1, reg_op1.extract(31)), reg_op1 ) >> 1
+        ( instr_slli | instr_sll ) -> (reg_op1 << 1),
+        ( instr_srli | instr_srl ) -> (reg_op1 >> 1),
+        ( instr_srai | instr_sra ) -> (Cat( Fill(1, reg_op1.extract(31)), reg_op1 ) >> 1),
       ))
       reg_sh := reg_sh - 1.U
     }    
@@ -1876,9 +1877,9 @@ if (DEBUG){
       when(~mem_do_rdata){
 
           mem_wordsize := Mux1H(Seq(
-            (instr_lb | instr_lbu) -> 2.U
-            (instr_lh | instr_lhu) -> 1.U
-            (instr_lw            ) -> 0.U
+            (instr_lb | instr_lbu) -> 2.U,
+            (instr_lh | instr_lhu) -> 1.U,
+            (instr_lw            ) -> 0.U,
           ))
 
         latched_is_lu := is_lbu_lhu_lw
@@ -1895,9 +1896,9 @@ if (DEBUG){
       when(~mem_do_prefetch & mem_done){
 
         reg_out := Mux1H(Seq(
-          latched_is_lu -> mem_rdata_word
-          latched_is_lh -> Cat( Fill(16, mem_rdata_word.extract(15)), mem_rdata_word(15,0) )
-          latched_is_lb -> Cat( Fill(24, mem_rdata_word.extract(7)) , mem_rdata_word(7,0)  )
+          latched_is_lu -> mem_rdata_word,
+          latched_is_lh -> Cat( Fill(16, mem_rdata_word.extract(15)), mem_rdata_word(15,0) ),
+          latched_is_lb -> Cat( Fill(24, mem_rdata_word.extract(7)) , mem_rdata_word(7,0)  ),
         ))
 
         decoder_trigger := true.B
@@ -1915,31 +1916,30 @@ if (DEBUG){
 
 
   if (CATCH_MISALIGN){
-    when( (mem_do_rdata || mem_do_wdata)){
-      when(mem_wordsize === 0.U && reg_op1(1,0)         =/= 0.U){
+    when( (mem_do_rdata | mem_do_wdata)){
+      when(mem_wordsize === 0.U & reg_op1(1,0)         =/= 0.U){
         printf(s"MISALIGNED WORD: 0x%08x", reg_op1)       
       }
       when (mem_wordsize === 1.U && reg_op1.extract(0)  =/= 0.U){
         printf(s"MISALIGNED HALFWORD: 0x%08x", reg_op1)
       }
     }
-    when( mem_do_rinst && (COMPRESSED_ISA ? reg_pc[0] : |reg_pc[1:0])){
+    when( mem_do_rinst & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else { reg_pc(1,0) =/= 0.U} )){
       printf(s"MISALIGNED INSTRUCTION: 0x%08x", reg_pc)
     }
   }
 
-  if (CATCH_MISALIGN){
+  if(CATCH_MISALIGN){
     when(~( if(ENABLE_IRQ) {~irq_mask.extract(irq_buserror) & ~irq_active} else {false.B})){
       when( (mem_do_rdata | mem_do_wdata)){
         when( (mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U) | (mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U) ){
           cpu_state := cpu_state_trap            
         }
       }
-      when(mem_do_rinst & (if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc[1:0] =/= 0.U}) ){
+      when( mem_do_rinst & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc(1,0) =/= 0.U}) ){
         cpu_state := cpu_state_trap
       }        
     }
-
   } else{
     when( decoder_trigger_q & ~decoder_pseudo_trigger_q & instr_ecall_ebreak){
       cpu_state := cpu_state_trap
@@ -1972,7 +1972,7 @@ if (DEBUG){
 
 
 
-  if (~CATCH_MISALIGN){
+  if (!CATCH_MISALIGN){
     if (COMPRESSED_ISA){
       reg_pc(0) := 0.U
       reg_next_pc(0) := 0.U    
@@ -1987,60 +1987,28 @@ if (DEBUG){
 
 
 
-  // valid = Bool()
-  // order = UInt(64.W)
-  // insn  = UInt(32.W)
-  // trap  = Bool()
-  // halt  = Bool()
-  // intr  = Bool()
-  // mode  = UInt(2.W)
-  // ixl   = UInt(2.W)
-  // rs1_addr  = UInt(5.W)
-  // rs2_addr  = UInt(5.W)
-  // rs1_rdata = UInt(32.W)
-  // rs2_rdata = UInt(32.W)
-  // rd_addr   = UInt(5.W)
-  // rd_wdata  = UInt(32.W)
-  // pc_rdata  = UInt(32.W)
-  // pc_wdata  = UInt(32.W)
-  // mem_addr  = UInt(32.W)
-  // mem_rmask = UInt(4.W)
-  // mem_wmask = UInt(4.W)
-  // mem_rdata = UInt(32.W)
-  // mem_wdata = UInt(32.W)
-
-  // csr_mcycle_rmask = UInt(64.W)
-  // csr_mcycle_wmask = UInt(64.W)
-  // csr_mcycle_rdata = UInt(64.W)
-  // csr_mcycle_wdata = UInt(64.W)
-
-  // csr_minstret_rmask= UInt(64.W)
-  // csr_minstret_wmask= UInt(64.W)
-  // csr_minstret_rdata= UInt(64.W)
-  // csr_minstret_wdata= UInt(64.W)
-
 
   if(RISCV_FORMAL){
     val dbg_irq_call  = RegInit(false.B)
     val dbg_irq_enter = RegInit(false.B)
     val dbg_irq_ret   = Reg(UInt(32.W))
 
-    io.rvfi.valid := RegNext( (launch_next_insn | trap) & dbg_valid_insn, false.B)
-    io.rvfi.order := RegNext( rvfi.order + rvfi.valid, 0.U)
+    io.rvfi.get.valid := RegNext( (launch_next_insn | io.trap) & dbg_valid_insn, false.B)
+    io.rvfi.get.order := RegNext( io.rvfi.get.order + io.rvfi.get.valid, 0.U)
 
-    io.rvfi.insn      := RegNext(dbg_insn_opcode)
-    io.rvfi.rs2_addr  := RegNext(Mux(dbg_rs2val_valid, dbg_insn_rs2, 0.U))
-    io.rvfi.pc_rdata  := RegNext(dbg_insn_addr)
-    io.rvfi.rs2_rdata := RegNext(Mux(dbg_rs2val_valid, dbg_rs2val, 0.U))
-    io.rvfi.trap      := RegNext(trap)
-    io.rvfi.halt      := RegNext(trap)
-    io.rvfi.intr      := RegNext(dbg_irq_enter)
-    io.rvfi.mode      := RegNext(3.U)
-    io.rvfi.ixl       := RegNext(1.U)
+    io.rvfi.get.insn      := RegNext(dbg_insn_opcode)
+    io.rvfi.get.rs2_addr  := RegNext(Mux(dbg_rs2val_valid, dbg_insn_rs2, 0.U))
+    io.rvfi.get.pc_rdata  := RegNext(dbg_insn_addr)
+    io.rvfi.get.rs2_rdata := RegNext(Mux(dbg_rs2val_valid, dbg_rs2val, 0.U))
+    io.rvfi.get.trap      := RegNext(io.trap)
+    io.rvfi.get.halt      := RegNext(io.trap)
+    io.rvfi.get.intr      := RegNext(dbg_irq_enter)
+    io.rvfi.get.mode      := RegNext(3.U)
+    io.rvfi.get.ixl       := RegNext(1.U)
 
 
 
-    when(rvfi.valid){
+    when(io.rvfi.get.valid){
       dbg_irq_call := false.B
       dbg_irq_enter := dbg_irq_call
     } .elsewhen(irq_state === 1.U){
@@ -2048,16 +2016,16 @@ if (DEBUG){
       dbg_irq_ret := next_pc
     }
 
-    val rvfi_rd_addr  := RegInit(0.U(5.W));  io.rvfi.rd_addr  := rvfi_rd_addr
-    val rvfi_rd_wdata := RegInit(0.U(32.W)); io.rvfi.rd_wdata := rvfi_rd_wdata
+    val rvfi_rd_addr  = RegInit(0.U(5.W));  io.rvfi.get.rd_addr  := rvfi_rd_addr
+    val rvfi_rd_wdata = RegInit(0.U(32.W)); io.rvfi.get.rd_wdata := rvfi_rd_wdata
 
     when( dbg_insn_opcode === BitPat("b0000001?????????????000??0001011")){ // setq
       rvfi_rd_addr  := 0.U
       rvfi_rd_wdata := 0.U
     } .elsewhen(cpuregs_write & irq_state === 0.U){
       rvfi_rd_addr  := latched_rd
-      rvfi_rd_wdata := Mux(latched_rd, cpuregs_wrdata, 0.U)      
-    } .elsewhen(rvfi.valid){
+      rvfi_rd_wdata := Mux(latched_rd =/= 0.U, cpuregs_wrdata, 0.U)      
+    } .elsewhen(io.rvfi.get.valid){
       rvfi_rd_addr  := 0.U
       rvfi_rd_wdata := 0.U
     }
@@ -2065,14 +2033,14 @@ if (DEBUG){
 
 
 
-    io.rvfi.rs1_addr  := RegNext( Mux(dbg_insn_opcode === BitPat("b0000000?????000??????????0001011") | dbg_insn_opcode === BitPat("b0000010?????00000???000000001011"), 0.U, Mux(dbg_rs1val_valid, dbg_insn_rs1, 0.U)))
-    io.rvfi.rs1_rdata := RegNext( Mux(dbg_insn_opcode === BitPat("b0000000?????000??????????0001011") | dbg_insn_opcode === BitPat("b0000010?????00000???000000001011"), 0.U, Mux(dbg_rs1val_valid, dbg_rs1val,   0.U)))
+    io.rvfi.get.rs1_addr  := RegNext( Mux(dbg_insn_opcode === BitPat("b0000000?????000??????????0001011") | dbg_insn_opcode === BitPat("b0000010?????00000???000000001011"), 0.U, Mux(dbg_rs1val_valid, dbg_insn_rs1, 0.U)))
+    io.rvfi.get.rs1_rdata := RegNext( Mux(dbg_insn_opcode === BitPat("b0000000?????000??????????0001011") | dbg_insn_opcode === BitPat("b0000010?????00000???000000001011"), 0.U, Mux(dbg_rs1val_valid, dbg_rs1val,   0.U)))
 
-    val rvfi_mem_addr  = Reg(UInt(32.W)); io.rvfi.mem_addr  := rvfi_mem_addr
-    val rvfi_mem_rmask = Reg(UInt(4.W)) ; io.rvfi.mem_rmask := rvfi_mem_rmask
-    val rvfi_mem_wmask = Reg(UInt(4.W)) ; io.rvfi.mem_wmask := rvfi_mem_wmask
-    val rvfi_mem_rdata = Reg(UInt(32.W)); io.rvfi.mem_rdata := rvfi_mem_rdata
-    val rvfi_mem_wdata = Reg(UInt(32.W)); io.rvfi.mem_wdata := rvfi_mem_wdata
+    val rvfi_mem_addr  = Reg(UInt(32.W)); io.rvfi.get.mem_addr  := rvfi_mem_addr
+    val rvfi_mem_rmask = Reg(UInt(4.W)) ; io.rvfi.get.mem_rmask := rvfi_mem_rmask
+    val rvfi_mem_wmask = Reg(UInt(4.W)) ; io.rvfi.get.mem_wmask := rvfi_mem_wmask
+    val rvfi_mem_rdata = Reg(UInt(32.W)); io.rvfi.get.mem_rdata := rvfi_mem_rdata
+    val rvfi_mem_wdata = Reg(UInt(32.W)); io.rvfi.get.mem_wdata := rvfi_mem_wdata
 
     when(~dbg_irq_call){
       when(dbg_mem_instr){
@@ -2083,7 +2051,7 @@ if (DEBUG){
         rvfi_mem_wdata := 0.U
       } .elsewhen(dbg_mem_valid & dbg_mem_ready){
         rvfi_mem_addr  := dbg_mem_addr
-        rvfi_mem_rmask := Mux(dbg_mem_wstrb, 0.U, "hF".U)
+        rvfi_mem_rmask := Mux(dbg_mem_wstrb =/= 0.U, 0.U, "hF".U)
         rvfi_mem_wmask := dbg_mem_wstrb
         rvfi_mem_rdata := dbg_mem_rdata
         rvfi_mem_wdata := dbg_mem_wdata
@@ -2094,34 +2062,34 @@ if (DEBUG){
 
 
 
-    io.rvfi_pc_wdata := Mux(dbg_irq_call, dbg_irq_ret, dbg_insn_addr)
+    io.rvfi.get.pc_wdata := Mux(dbg_irq_call, dbg_irq_ret, dbg_insn_addr)
 
-    io.rvfi_csr_mcycle_rmask := 0.U
-    io.rvfi_csr_mcycle_wmask := 0.U
-    io.rvfi_csr_mcycle_rdata := 0.U
-    io.rvfi_csr_mcycle_wdata := 0.U
+    io.rvfi.get.csr_mcycle_rmask := 0.U
+    io.rvfi.get.csr_mcycle_wmask := 0.U
+    io.rvfi.get.csr_mcycle_rdata := 0.U
+    io.rvfi.get.csr_mcycle_wdata := 0.U
 
-    rvfi.csr_minstret_rmask := 0.U
-    rvfi.csr_minstret_wmask := 0.U
-    rvfi.csr_minstret_rdata := 0.U
-    rvfi.csr_minstret_wdata := 0.U
+    io.rvfi.get.csr_minstret_rmask := 0.U
+    io.rvfi.get.csr_minstret_wmask := 0.U
+    io.rvfi.get.csr_minstret_rdata := 0.U
+    io.rvfi.get.csr_minstret_wdata := 0.U
 
-    when(io.rvfi.valid){
-      when( io.rvfi_insn === BitPat("b110000000000?????010?????1110011")){
-        io.rvfi_csr_mcycle_rmask := "h00000000FFFFFFFF".U
-        io.rvfi_csr_mcycle_rdata := rvfi_rd_wdata
+    when(io.rvfi.get.valid){
+      when( io.rvfi.get.insn === BitPat("b110000000000?????010?????1110011")){
+        io.rvfi.get.csr_mcycle_rmask := "h00000000FFFFFFFF".U
+        io.rvfi.get.csr_mcycle_rdata := rvfi_rd_wdata
       }
-      when(io.rvfi_insn === BitPat("b110010000000?????010?????1110011")){
-        io.rvfi_csr_mcycle_rmask := "hFFFFFFFF00000000".U
-        io.rvfi_csr_mcycle_rdata := Cat(rvfi_rd_wdata, 0.U(32.W))
+      when(io.rvfi.get.insn === BitPat("b110010000000?????010?????1110011")){
+        io.rvfi.get.csr_mcycle_rmask := "hFFFFFFFF00000000".U
+        io.rvfi.get.csr_mcycle_rdata := Cat(io.rvfi.get.rd_wdata, 0.U(32.W))
       }
-      when(io.rvfi_insn === BitPat("b110000000010?????010?????1110011")){
-        io.rvfi_csr_minstret_rmask :="h00000000FFFFFFFF".U
-        io.rvfi_csr_minstret_rdata := rvfi_rd_wdata
+      when(io.rvfi.get.insn === BitPat("b110000000010?????010?????1110011")){
+        io.rvfi.get.csr_minstret_rmask :="h00000000FFFFFFFF".U
+        io.rvfi.get.csr_minstret_rdata := io.rvfi.get.rd_wdata
       }
-      when(io.rvfi_insn === BitPat("b110010000010?????010?????1110011")){
-        io.rvfi_csr_minstret_rmask := "hFFFFFFFF00000000".U
-        io.rvfi_csr_minstret_rdata := Cat(rvfi_rd_wdata, 0.U(32.W))
+      when(io.rvfi.get.insn === BitPat("b110010000010?????010?????1110011")){
+        io.rvfi.get.csr_minstret_rmask := "hFFFFFFFF00000000".U
+        io.rvfi.get.csr_minstret_rdata := Cat(io.rvfi.get.rd_wdata, 0.U(32.W))
       }      
     }
   }

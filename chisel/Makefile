@@ -5,6 +5,6 @@
 
 compile:
 	rm -rf ./generated/
-	sbt "test:runMain test.testMain"
+	sbt "test:runMain Picorv32.testMain"
 
 

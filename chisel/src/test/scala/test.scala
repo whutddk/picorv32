@@ -1,11 +1,16 @@
 
 package Picorv32
 
-import chisel3._
-import chisel3.util._
 
-object testModule extends App {
-  (new chisel3.stage.ChiselStage).execute( Array("--target-dir", "generated/", "-e", "verilog" ) ++ args, Seq(
-      ChiselGeneratorAnnotation(() => { new Picorv32 })
-    ))
+
+object testMain extends App {
+  circt.stage.ChiselStage.emitSystemVerilogFile(
+    new Picorv32,
+    firtoolOpts = Array(
+    "--target-dir", "generated/",
+    "-disable-all-randomization",
+    "-strip-debug-info",
+    "--disallowLocalVariables",
+    "--disallowPackedArrays")
+  )
 }

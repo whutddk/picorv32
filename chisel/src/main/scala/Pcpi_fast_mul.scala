@@ -31,7 +31,7 @@ class Pcpi_fast_mul(
   val io: PCPI_Access_Bundle = IO(new PCPI_Access_Bundle)
 
 
-	val pcpi_insn_valid = io.valid & io.insn(6,0) == "b0110011".U & io.insn(31,25) == "b0000001".U
+	val pcpi_insn_valid = io.valid & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U
 	val pcpi_insn_valid_q = RegNext(pcpi_insn_valid)
 
   val instr_mul    = (if(EXTRA_INSN_FFS) {pcpi_insn_valid_q} else {pcpi_insn_valid}) & io.insn(14,12) === "b000".U
@@ -73,26 +73,17 @@ class Pcpi_fast_mul(
 
 	io.wr    := (if( EXTRA_MUL_FFS ) {active.extract(3)} else {active.extract(1)})
 	io.ready := (if( EXTRA_MUL_FFS ) {active.extract(3)} else {active.extract(1)})
-	io.wait  := false.B
+	io.waiting  := false.B
 
 
-  if(RISCV_FORMAL_ALTOPS){
-    io.rd := Mux1H(Seq(
-      instr_mul    -> ( (io.rs1 + io.rs2) ^ "h5876063e".U ),
-      instr_mulh   -> ( (io.rs1 + io.rs2) ^ "hf6583fb7".U ),
-      instr_mulhsu -> ( (io.rs1 - io.rs2) ^ "hecfbe137".U ),
-      instr_mulhu  -> ( (io.rs1 + io.rs2) ^ "h949ce5e8".U ),
-    ))
-  } else{
-    io.rd := (
-      if( EXTRA_MUL_FFS ){
-        Mux( shift_out, rd_q >> 32, rd_q )
-      } else{
-        Mux( shift_out, rd >> 32, rd )
-      }      
-    )
+  io.rd := (
+    if( EXTRA_MUL_FFS ){
+      Mux( shift_out, rd_q >> 32, rd_q )
+    } else{
+      Mux( shift_out, rd >> 32, rd )
+    }      
+  )
 
-  }
 
 
 
