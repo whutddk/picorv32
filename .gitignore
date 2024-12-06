@@ -36,3 +36,6 @@
 /synth.v
 .*.swp
 chisel/generated/
+*.verilog
+*.dump
+chisel/tb/ci/
