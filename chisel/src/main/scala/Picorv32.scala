@@ -35,7 +35,7 @@ class Memory_Access_Bundle extends Bundle{
   val isInstr = Output(Bool())
   val addr  = Output(UInt(32.W))
   val wdata = Output(UInt(32.W))
-  val wstrb = Output(UInt(3.W))
+  val wstrb = Output(UInt(4.W))
   val rdata = Input(UInt(32.W))
 
 }
