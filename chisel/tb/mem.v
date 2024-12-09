@@ -15,19 +15,19 @@ module mem(
     always @(posedge clock) begin
         if( mem_valid ) begin
             if( mem_wstrb == 4'b0 )begin //read
-                mem_rdata <= sram[ mem_addr[15:0] ];
+                mem_rdata <= sram[ mem_addr[16:2] ];
             end else begin
                 if(mem_wstrb[3]) begin
-                    sram[ mem_addr[15:0] ][31:24] <= mem_wdata[31:24];
+                    sram[ mem_addr[16:2] ][31:24] <= mem_wdata[31:24];
                 end
                 if(mem_wstrb[2]) begin
-                    sram[ mem_addr[15:0] ][23:16] <= mem_wdata[23:16];
+                    sram[ mem_addr[16:2] ][23:16] <= mem_wdata[23:16];
                 end
                 if(mem_wstrb[1]) begin
-                    sram[ mem_addr[15:0] ][15: 8] <= mem_wdata[15: 8];
+                    sram[ mem_addr[16:2] ][15: 8] <= mem_wdata[15: 8];
                 end
                 if(mem_wstrb[0]) begin
-                    sram[ mem_addr[15:0] ][ 7: 0] <= mem_wdata[ 7: 0];
+                    sram[ mem_addr[16:2] ][ 7: 0] <= mem_wdata[ 7: 0];
                 end
             end
         end

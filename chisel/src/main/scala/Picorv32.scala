@@ -435,7 +435,9 @@ extends Module{
 
   if (COMPRESSED_ISA){
 
-
+    when(mem_xfer){
+      mem_rdata_q := mem_rdata_latched
+    }
     when(mem_done && (mem_do_prefetch | mem_do_rinst)){
       when( mem_rdata_latched === BitPat("b????????_????????_000?????_??????00")){// C.ADDI4SPN
         mem_rdata_q :=
@@ -626,8 +628,6 @@ extends Module{
             mem_rdata_q(6, 0)
           )
       }
-    } .elsewhen(mem_xfer){
-      mem_rdata_q := mem_rdata_latched
     }
   } else {
     mem_rdata_q := io.mem.rdata
@@ -1290,7 +1290,7 @@ extends Module{
 
   val latched_rd = if(STACKADDR != "hffffffff".U(32.W)){RegInit(2.U(regindex_bits.W))} else { Reg(UInt((regindex_bits.W))) }
 
-  next_pc := latched_store & Mux(latched_branch, reg_out & "hfffffffe".U, reg_next_pc)
+  next_pc := Mux(latched_store & latched_branch, reg_out & "hfffffffe".U, reg_next_pc)
 
   val pcpi_timeout_counter = RegInit("hF".U(4.W))
   val pcpi_timeout = RegInit(false.B)
@@ -1598,9 +1598,9 @@ extends Module{
       )
 
     when(latched_branch){
-      printf( "ST_RD:  %d 0x%x, BRANCH 0x%x", latched_rd, reg_pc + Mux(latched_compr, 2.U, 4.U), current_pc)
+      printf( "ST_RD:  %d 0x%x, BRANCH 0x%x\n", latched_rd, reg_pc + Mux(latched_compr, 2.U, 4.U), current_pc)
     } .elsewhen(latched_store & ~latched_branch){
-      printf( "ST_RD:  %d 0x%x", latched_rd, Mux(latched_stalu, alu_out_q, reg_out))
+      printf( "ST_RD:  %d 0x%x\n", latched_rd, Mux(latched_stalu, alu_out_q, reg_out))
     }
     
     if( ENABLE_IRQ ){
@@ -1724,7 +1724,7 @@ extends Module{
       }
       cpu_state := cpu_state_exec;          
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1732,13 +1732,13 @@ extends Module{
       mem_do_rinst := true.B
     } .elsewhen( if(CATCH_ILLINSN || WITH_PCPI) {instr_trap} else {false.B} ){
       if (WITH_PCPI){
-        printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+        printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
         reg_op1    := cpuregs_rs1
         dbg_rs1val := cpuregs_rs1
         dbg_rs1val_valid := true.B
         if (ENABLE_REGS_DUALPORT){
           pcpi_valid := true.B
-          printf( "LD_RS2: %d 0x%x", decoded_rs2, cpuregs_rs2)
+          printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
           reg_sh  := cpuregs_rs2
           reg_op2 := cpuregs_rs2
           dbg_rs2val := cpuregs_rs2
@@ -1758,7 +1758,7 @@ extends Module{
       }
 
       if( CATCH_ILLINSN ){
-        printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x", reg_pc)
+        printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
         when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
           cpu_state := cpu_state_fetch
         } .otherwise{
@@ -1781,14 +1781,14 @@ extends Module{
       latched_store := true.B
       cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_getq} else {false.B}){
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_store := true.B
       cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_setq} else {false.B}){
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1800,7 +1800,7 @@ extends Module{
       irq_active := false.B
       latched_branch := true.B
       latched_store := true.B
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1809,7 +1809,7 @@ extends Module{
     .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
       latched_store := true.B
       reg_out := irq_mask
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       irq_mask := cpuregs_rs1 | MASKED_IRQ
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1818,20 +1818,20 @@ extends Module{
     .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
       latched_store := true.B
       reg_out := timer;
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       timer := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_fetch
     } .elsewhen( if( !BARREL_SHIFTER ){is_slli_srli_srai} else {false.B} ){
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       reg_sh := decoded_rs2
       cpu_state := cpu_state_shift
     } .elsewhen( if( BARREL_SHIFTER ){is_jalr_addi_slti_sltiu_xori_ori_andi | is_slli_srli_srai} else {false.B} ){
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1843,12 +1843,12 @@ extends Module{
       }
       cpu_state := cpu_state_exec
     } .otherwise{
-      printf( "LD_RS1: %d 0x%x", decoded_rs1, cpuregs_rs1)
+      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       if (ENABLE_REGS_DUALPORT){
-        printf( "LD_RS2: %d 0x%x", decoded_rs2, cpuregs_rs2)
+        printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
         reg_sh := cpuregs_rs2
         reg_op2 := cpuregs_rs2
         dbg_rs2val := cpuregs_rs2
@@ -1875,7 +1875,7 @@ extends Module{
 
 
   } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
-    printf( "LD_RS2: %d 0x%x", decoded_rs2, cpuregs_rs2)
+    printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
     reg_sh  := cpuregs_rs2
     reg_op2 := cpuregs_rs2
     dbg_rs2val := cpuregs_rs2
@@ -1891,7 +1891,7 @@ extends Module{
         cpu_state := cpu_state_fetch
       } .elsewhen( if(CATCH_ILLINSN){pcpi_timeout | instr_ecall_ebreak} else {false.B}){
         pcpi_valid := false.B
-        printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x", reg_pc)
+        printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
         when( if(ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
           cpu_state := cpu_state_fetch
         } .otherwise{
@@ -2034,14 +2034,14 @@ extends Module{
   if (CATCH_MISALIGN){
     when( (mem_do_rdata | mem_do_wdata)){
       when(mem_wordsize === 0.U & reg_op1(1,0)         =/= 0.U){
-        printf( "MISALIGNED WORD: 0x%x", reg_op1)       
+        printf( "MISALIGNED WORD: 0x%x\n", reg_op1)       
       }
       when (mem_wordsize === 1.U && reg_op1.extract(0)  =/= 0.U){
-        printf( "MISALIGNED HALFWORD: 0x%x", reg_op1)
+        printf( "MISALIGNED HALFWORD: 0x%x\n", reg_op1)
       }
     }
     when( mem_do_rinst & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else { reg_pc(1,0) =/= 0.U} )){
-      printf( "MISALIGNED INSTRUCTION: 0x%x", reg_pc)
+      printf( "MISALIGNED INSTRUCTION: 0x%x\n", reg_pc)
     }
   }
 

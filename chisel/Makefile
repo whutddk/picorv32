@@ -10,11 +10,11 @@ compile:
 
 
 test: 
-	iverilog -o ./tb/build/testbench.vvp $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
+	iverilog -o ./tb/build/testbench.vvp $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) -D RANDOMIZE_REG_INIT tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
 	vvp -N ./tb/build/testbench.vvp ../firmware/firmware.hex +RANDOMIZE_REG_INIT
 
 test_vcd:
-	iverilog -o ./tb/build/testbench.vvp $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
+	iverilog -o ./tb/build/testbench.vvp $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) -D RANDOMIZE_REG_INIT tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
 	vvp -N ./tb/build/testbench.vvp ../firmware/firmware.hex +vcd +trace +noerror +RANDOMIZE_REG_INIT
 
 
