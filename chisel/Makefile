@@ -1,6 +1,6 @@
 
 
-.PHONY: compile
+.PHONY: compile test test_vcd clean
 
 
 compile:
@@ -9,12 +9,23 @@ compile:
 
 
 
-test: testbench.vvp ../firmware/firmware.hex
-	vvp -N $<
+test: 
+	iverilog -o ./tb/build/testbench.vvp $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
+	vvp -N ./tb/build/testbench.vvp ../firmware/firmware.hex +RANDOMIZE_REG_INIT
 
-test_vcd: testbench.vvp ../firmware/firmware.hex
-	nnp -N $< +vcd +trace +noerror
+test_vcd:
+	iverilog -o ./tb/build/testbench.vvp $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
+	vvp -N ./tb/build/testbench.vvp ../firmware/firmware.hex +vcd +trace +noerror +RANDOMIZE_REG_INIT
 
-testbench.vvp:
-	iverilog -o $@ $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) tb/picorv32_tb.v tb/mem.v generated/Picorv32.v
+
+
+clean:
+	rm -vrf \
+		./tb/build/testbench.vvp ./tb/build/testbench_sp.vvp ./tb/build/testbench_synth.vvp ./tb/build/testbench_ez.vvp \
+		./tb/build/testbench_rvf.vvp ./tb/build/testbench_wb.vvp ./tb/build/testbench.vcd ./tb/build/testbench.trace \
+		./tb/build/testbench_verilator ./tb/build/testbench_verilator_dir
+
+
+vcd:
+	gtkwave ./tb/build/wave.vcd &
 

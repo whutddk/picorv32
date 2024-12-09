@@ -135,29 +135,29 @@ module picorv32_tb (
         .tests_passed(tests_passed)
     );
 
-	picorv32_rvfimon rvfi_monitor (
-		.clock          (clk           ),
-		.reset          (!resetn       ),
-		.rvfi_valid     (rvfi_valid    ),
-		.rvfi_order     (rvfi_order    ),
-		.rvfi_insn      (rvfi_insn     ),
-		.rvfi_trap      (rvfi_trap     ),
-		.rvfi_halt      (rvfi_halt     ),
-		.rvfi_intr      (rvfi_intr     ),
-		.rvfi_rs1_addr  (rvfi_rs1_addr ),
-		.rvfi_rs2_addr  (rvfi_rs2_addr ),
-		.rvfi_rs1_rdata (rvfi_rs1_rdata),
-		.rvfi_rs2_rdata (rvfi_rs2_rdata),
-		.rvfi_rd_addr   (rvfi_rd_addr  ),
-		.rvfi_rd_wdata  (rvfi_rd_wdata ),
-		.rvfi_pc_rdata  (rvfi_pc_rdata ),
-		.rvfi_pc_wdata  (rvfi_pc_wdata ),
-		.rvfi_mem_addr  (rvfi_mem_addr ),
-		.rvfi_mem_rmask (rvfi_mem_rmask),
-		.rvfi_mem_wmask (rvfi_mem_wmask),
-		.rvfi_mem_rdata (rvfi_mem_rdata),
-		.rvfi_mem_wdata (rvfi_mem_wdata)
-	);
+	// picorv32_rvfimon rvfi_monitor (
+	// 	.clock          (clk           ),
+	// 	.reset          (!resetn       ),
+	// 	.rvfi_valid     (rvfi_valid    ),
+	// 	.rvfi_order     (rvfi_order    ),
+	// 	.rvfi_insn      (rvfi_insn     ),
+	// 	.rvfi_trap      (rvfi_trap     ),
+	// 	.rvfi_halt      (rvfi_halt     ),
+	// 	.rvfi_intr      (rvfi_intr     ),
+	// 	.rvfi_rs1_addr  (rvfi_rs1_addr ),
+	// 	.rvfi_rs2_addr  (rvfi_rs2_addr ),
+	// 	.rvfi_rs1_rdata (rvfi_rs1_rdata),
+	// 	.rvfi_rs2_rdata (rvfi_rs2_rdata),
+	// 	.rvfi_rd_addr   (rvfi_rd_addr  ),
+	// 	.rvfi_rd_wdata  (rvfi_rd_wdata ),
+	// 	.rvfi_pc_rdata  (rvfi_pc_rdata ),
+	// 	.rvfi_pc_wdata  (rvfi_pc_wdata ),
+	// 	.rvfi_mem_addr  (rvfi_mem_addr ),
+	// 	.rvfi_mem_rmask (rvfi_mem_rmask),
+	// 	.rvfi_mem_wmask (rvfi_mem_wmask),
+	// 	.rvfi_mem_rdata (rvfi_mem_rdata),
+	// 	.rvfi_mem_wdata (rvfi_mem_wdata)
+	// );
 
 
     initial begin
@@ -175,10 +175,10 @@ module picorv32_tb (
 
 	initial begin
 		if ($test$plusargs("vcd")) begin
-			$dumpfile("./build/wave.vcd"); //生成的vcd文件名称
+			$dumpfile("./tb/build/wave.vcd"); //生成的vcd文件名称
 			$dumpvars(0, picorv32_tb);//tb模块名称
 		end
-		repeat (1000000) @(posedge clk);
+		repeat (1000000) @(posedge clock);
 		$display("TIMEOUT");
 		$finish;
 	end
@@ -188,10 +188,10 @@ module picorv32_tb (
 
 	initial begin
 		if ($test$plusargs("trace")) begin
-			trace_file = $fopen("./build/testbench.trace", "w");
-			repeat (10) @(posedge clk);
+			trace_file = $fopen("./tb/build/testbench.trace", "w");
+			repeat (10) @(posedge clock);
 			while (!trap) begin
-				@(posedge clk);
+				@(posedge clock);
 				if (trace_valid)
 					$fwrite(trace_file, "%x\n", trace_data);
 			end
@@ -202,7 +202,7 @@ module picorv32_tb (
 
 
 
-	always @(posedge clk) count_cycle <= ~reset ? count_cycle + 1 : 0;
+	always @(posedge clock) count_cycle <= ~reset ? count_cycle + 1 : 0;
 
 	always @* begin
 		irq = 0;
@@ -223,11 +223,11 @@ module picorv32_tb (
 
 
 	integer cycle_counter;
-	always @(posedge clk) begin
-		cycle_counter <= resetn ? cycle_counter + 1 : 0;
-		if (resetn && trap) begin
+	always @(posedge clock) begin
+		cycle_counter <= ~reset ? cycle_counter + 1 : 0;
+		if (~reset && trap) begin
 
-			repeat (10) @(posedge clk);
+			repeat (10) @(posedge clock);
 
 			$display("TRAP after %1d clock cycles", cycle_counter);
 			if (tests_passed) begin
@@ -244,28 +244,12 @@ module picorv32_tb (
 
 
 
-    `define SRAM s_mem.sram
-	localparam DP = 2**16;
-    integer  i, byte;
     
 	reg [1023:0] firmware_file;
-    reg [7:0] mem [0:200000];
 	initial begin
 		if (!$value$plusargs("firmware=%s", firmware_file))
-			firmware_file = "firmware/firmware.hex";
-		$readmemh(firmware_file, mem);
-
-
-        for ( i = 0; i < DP; i = i + 1 ) begin
-            for ( byte = 0; byte < 4; byte = byte + 1 ) begin
-                if ( | mem[i*4+byte] ) begin
-                    `SRAM[i][8*byte +: 8] = mem[i*4+byte];
-                end
-                else begin
-                    `SRAM[i][8*byte +: 8] = 8'h0;
-                end
-            end
-        end
+			firmware_file = "../firmware/firmware.hex";
+		$readmemh(firmware_file, s_mem.sram);
 	end
 
 

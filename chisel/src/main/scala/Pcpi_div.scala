@@ -29,11 +29,10 @@ import chisel3.util._
  ***************************************************************/
 
 class Pcpi_div extends Module{
-  val io: PCPI_Access_Bundle = IO(new PCPI_Access_Bundle)
+  val io: PCPI_Access_Bundle = IO( Flipped(new PCPI_Access_Bundle) )
 
 	val pcpi_wr  = Reg(Bool());    io.wr := pcpi_wr
 	val pcpi_rd = Reg(UInt(32.W)); io.rd := pcpi_rd
-	val pcpi_waiting  = RegNext( instr_any_div_rem, false.B);  io.waiting := pcpi_waiting
 	val pcpi_ready = Reg(Bool());  io.ready := pcpi_ready
 
 
@@ -42,10 +41,11 @@ class Pcpi_div extends Module{
   val instr_rem  = RegNext( io.valid & ~io.ready & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U & io.insn(14,12) === "b110".U, false.B)
   val instr_remu = RegNext( io.valid & ~io.ready & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U & io.insn(14,12) === "b111".U, false.B)
 
-	val instr_any_div_rem = instr_div | instr_divu | instr_rem | instr_remu
+  val instr_any_div_rem = instr_div | instr_divu | instr_rem | instr_remu
+  val pcpi_waiting  = RegNext( instr_any_div_rem, false.B);  io.waiting := pcpi_waiting
 
-	val pcpi_waiting_q = RegNext(pcpi_waiting, false.B)
-	val start = pcpi_waiting & ~pcpi_waiting_q
+  val pcpi_waiting_q = RegNext(pcpi_waiting, false.B)
+  val start = pcpi_waiting & ~pcpi_waiting_q
 
 
 

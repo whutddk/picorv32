@@ -96,27 +96,28 @@ class Riscv_Format_Bundle extends Bundle{
   val csr_minstret_wdata= UInt(64.W)
 }
 
+
 class Picorv32(
   ENABLE_COUNTERS: Boolean = true,
   ENABLE_COUNTERS64: Boolean = true,
   ENABLE_REGS_16_31: Boolean = true,
-  ENABLE_REGS_DUALPORT: Boolean = true,
+  ENABLE_REGS_DUALPORT: Boolean = false,
   LATCHED_MEM_RDATA: Boolean = false,
   TWO_STAGE_SHIFT: Boolean = true,
   BARREL_SHIFTER: Boolean = false,
   TWO_CYCLE_COMPARE: Boolean = false,
   TWO_CYCLE_ALU: Boolean = false,
-  COMPRESSED_ISA: Boolean = false,
+  COMPRESSED_ISA: Boolean = true,
   CATCH_MISALIGN: Boolean = true,
   CATCH_ILLINSN: Boolean = true,
   ENABLE_PCPI: Boolean = false,
-  ENABLE_MUL: Boolean = false,
-  ENABLE_FAST_MUL: Boolean = false,
-  ENABLE_DIV: Boolean = false,
-  ENABLE_IRQ: Boolean = false,
+  ENABLE_MUL: Boolean = true,
+  ENABLE_FAST_MUL: Boolean = true,
+  ENABLE_DIV: Boolean = true,
+  ENABLE_IRQ: Boolean = true,
   ENABLE_IRQ_QREGS: Boolean = true,
   ENABLE_IRQ_TIMER: Boolean = true,
-  ENABLE_TRACE: Boolean = false,
+  ENABLE_TRACE: Boolean = true,
   REGS_INIT_ZERO: Boolean = false,
   MASKED_IRQ: UInt = "h00000000".U(32.W),
   LATCHED_IRQ: UInt = "hffffffff".U(32.W),
@@ -375,12 +376,12 @@ extends Module{
   val mem_la_firstword =
     if(COMPRESSED_ISA) {(mem_do_prefetch | mem_do_rinst) & next_pc.extract(1) & ~mem_la_secondword} else {false.B}
 
-  val mem_la_firstword_xfer =
-    if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg)} else {false.B}
 
   val last_mem_valid = RegNext(mem_valid & ~io.mem.ready, false.B)
   val mem_la_firstword_reg = RegEnable(mem_la_firstword, false.B, ~last_mem_valid)
 
+  val mem_la_firstword_xfer =
+    if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg)} else {false.B}
 
 
 
@@ -431,110 +432,205 @@ extends Module{
 
 
 
-  printf("Warning\n")
-  when(mem_xfer){
-    mem_rdata_q := (if(COMPRESSED_ISA) { mem_rdata_latched } else{ io.mem.rdata })
-  }
 
   if (COMPRESSED_ISA){
+
+
     when(mem_done && (mem_do_prefetch | mem_do_rinst)){
-      when(mem_rdata_latched(1,0) === "b00".U){
-        when(mem_rdata_latched(15,13) === "b000".U){// C.ADDI4SPN
-          mem_rdata_q(14,12) := "b000".U
-          mem_rdata_q(31,20) := Cat(0.U(2.W), mem_rdata_latched(10,7), mem_rdata_latched(12,11), mem_rdata_latched.extract(5), mem_rdata_latched.extract(6), 0.U(2.W))
-        } .elsewhen( mem_rdata_latched(15,13) === "b010".U ){// C.LW
-          mem_rdata_q(31,20) := Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched(12,10), mem_rdata_latched.extract(6), 0.U(2.W))
-          mem_rdata_q(14,12) := "b010".U
-        } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){// C.SW
-          mem_rdata_q(31,25) := Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched.extract(12))
-          mem_rdata_q(11, 7) := Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)) 
-          mem_rdata_q(14,12) := "b010".U
-        }        
-      } .elsewhen( mem_rdata_latched(1,0) === "b01".U ){
-        when(mem_rdata_latched(15,13) === "b000".U){ // C.ADDI
-          mem_rdata_q(14,12) := "b000".U
-          mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
-        } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LI
-          mem_rdata_q(14,12) := "b000".U
-          mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
-        } .elsewhen(mem_rdata_latched(15,13) === "b011".U){
-          when(mem_rdata_latched(11,7) === 2.U) { // C.ADDI16SP
-            mem_rdata_q(14,12) := "b000".U
-            mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(4,3), mem_rdata_latched.extract(5), mem_rdata_latched.extract(2), mem_rdata_latched.extract(6), 0.U(4.W)).asSInt
-            } .otherwise{ // C.LUI
-            mem_rdata_q(31,12) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
-            }
-        } .elsewhen(mem_rdata_latched(15,13) === "b100".U){
-          when(mem_rdata_latched(11,10) === "b00".U) { // C.SRLI
-            mem_rdata_q(31,25) := "b0000000".U
-            mem_rdata_q(14,12) := "b101".U
-          }
-          when(mem_rdata_latched(11,10) === "b01".U) { // C.SRAI
-            mem_rdata_q(31,25) := "b0100000".U
-            mem_rdata_q(14,12) := "b101".U
-          }
-          when(mem_rdata_latched(11,10) === "b10".U) { // C.ANDI
-            mem_rdata_q(14,12) := "b111".U
-            mem_rdata_q(31,20) := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2)).asSInt
-          }
-          when(mem_rdata_latched(12,10) === "b011".U) { // C.SUB, C.XOR, C.OR, C.AND
-            when(mem_rdata_latched(6,5) === "b00".U) { mem_rdata_q(14,12) := "b000".U}
-            when(mem_rdata_latched(6,5) === "b01".U) { mem_rdata_q(14,12) := "b100".U}
-            when(mem_rdata_latched(6,5) === "b10".U) { mem_rdata_q(14,12) := "b110".U}
-            when(mem_rdata_latched(6,5) === "b11".U) { mem_rdata_q(14,12) := "b111".U}
-            mem_rdata_q(31,25) := Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U, "b0000000".U)
-          }
-        } .elsewhen(mem_rdata_latched(15,13) === "b110".U){// C.BEQZ
-          mem_rdata_q(14,12) := "b000".U
-
-          {
-            val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
-            mem_rdata_q(31,25) := Cat( temp.extract(11), temp(9,4) )
-            mem_rdata_q(11,7)  := Cat( temp(3,0), temp.extract(10) )
-          }
-
-
-        } .elsewhen(mem_rdata_latched(15,13) === "b111".U){// C.BNEZ
-          mem_rdata_q(14,12) := "b001".U
-
-          {
-            val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
-            mem_rdata_q(31,25) := Cat( temp.extract(11), temp(9,4) )
-            mem_rdata_q(11,7)  := Cat( temp(3,0), temp.extract(10) )
-          }
-
-        }        
-      } .elsewhen( mem_rdata_latched(1,0) === "b10".U ){
-        when(mem_rdata_latched(15,13) === "b000".U){// C.SLLI
-          mem_rdata_q(31,25) := "b0000000".U
-          mem_rdata_q(14,12) := "b001".U
-        } .elsewhen( mem_rdata_latched(15,13) === "b010".U ){// C.LWSP
-          mem_rdata_q(31,20) := Cat(0.U(4.W), mem_rdata_latched(3,2), mem_rdata_latched.extract(12), mem_rdata_latched(6,4), 0.U(2.W))
-          mem_rdata_q(14,12) := "b010".U
-        } .elsewhen( mem_rdata_latched(15,13) === "b100".U ){
-          when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
-            mem_rdata_q(14,12) := "b000".U
-            mem_rdata_q(31,20) := 0.U
-          }
-          when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
-            mem_rdata_q(14,12) := "b000".U
-            mem_rdata_q(31,25) := "b0000000".U
-          }
-          when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
-            mem_rdata_q(14,12) := "b000".U
-            mem_rdata_q(31,20) := 0.U
-          }
-          when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
-            mem_rdata_q(14,12) := "b000".U
-            mem_rdata_q(31,25) := "b0000000".U
-          }
-        } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){ // C.SWSP
-            mem_rdata_q(31,25) := Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched(12,11))
-            mem_rdata_q(11, 7) := Cat(mem_rdata_latched(11,9), 0.U(2.W))
-            mem_rdata_q(14,12) := "b010".U
+      when( mem_rdata_latched === BitPat("b????????_????????_000?????_??????00")){// C.ADDI4SPN
+        mem_rdata_q :=
+          Cat(
+            Cat(0.U(2.W), mem_rdata_latched(10,7), mem_rdata_latched(12,11), mem_rdata_latched.extract(5), mem_rdata_latched.extract(6), 0.U(2.W)), //31,20
+            mem_rdata_q(19,15),
+            "b000".U(3.W), //14,12
+            mem_rdata_q(11,0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_010?????_??????00") ){// C.LW
+        mem_rdata_q :=
+          Cat(
+            Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched(12,10), mem_rdata_latched.extract(6), 0.U(2.W)), //31,20
+            mem_rdata_q(19,15),
+            "b010".U(3.W), //14,12
+            mem_rdata_q(11,0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????00") ){// C.SW
+        mem_rdata_q :=
+          Cat(
+            Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched.extract(12)), //31,25
+            mem_rdata_q(24,15),
+            "b010".U(3.W),//14,12
+            Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)),//11,7
+            mem_rdata_q(6,0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_0?0?????_??????01") ){ // C.ADDI // C.LI
+        mem_rdata_q :=
+          Cat(
+            Cat( Fill( 7, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)), //31,20
+            mem_rdata_q(19,15),
+            "b000".U(3.W),//14,12
+            mem_rdata_q(11,0),
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_011?????_??????01") ){
+        when( mem_rdata_latched(11,7) === 2.U ) { // C.ADDI16SP
+          mem_rdata_q :=
+            Cat(
+              Cat( Fill(3, mem_rdata_latched.extract(12)), mem_rdata_latched(4,3), mem_rdata_latched.extract(5), mem_rdata_latched.extract(2), mem_rdata_latched.extract(6), 0.U(4.W)), //31,20
+              mem_rdata_q(19,15),
+              "b000".U(3.W), //14,12
+                mem_rdata_q(11,0)
+            )
+        } .otherwise{ // C.LUI
+          mem_rdata_q :=
+            Cat(
+              Cat( Fill( 15, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)),//31,12
+              mem_rdata_q(11,0)
+            )
         }
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?00??_??????01") ) { // C.SRLI
+        mem_rdata_q :=
+          Cat(
+            "b0000000".U(7.W), //31,25
+            mem_rdata_q(24,15),
+            "b101".U(3.W), //14,12
+            mem_rdata_q(11,0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?01??_??????01") ) { // C.SRAI
+        mem_rdata_q :=
+          Cat(
+            "b0100000".U(7.W), //31,25
+            mem_rdata_q(24,15),
+            "b101".U(3.W), //14,12
+            mem_rdata_q(11,0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?10??_??????01") ) { // C.ANDI
+        mem_rdata_q :=
+          Cat(
+            Cat( Fill( 7, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)), //31,20
+            mem_rdata_q(19,15),
+            "b111".U(3.W), //14,12
+            mem_rdata_q(11, 0),
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?00???01") ) { // C.SUB, 
+        mem_rdata_q := 
+          Cat(
+            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
+            mem_rdata_q(24,15),
+            "b000".U(3.W), //14,12
+            mem_rdata_q(11, 0),
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?01???01") ) { //C.XOR, 
+        mem_rdata_q := 
+          Cat(
+            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
+            mem_rdata_q(24,15),
+            "b100".U(3.W), //14,12
+            mem_rdata_q(11, 0),
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?10???01") ) { //C.OR, 
+        mem_rdata_q := 
+          Cat(
+            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
+            mem_rdata_q(24,15),
+            "b110".U(3.W), //14,12
+            mem_rdata_q(11, 0),
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?11???01") ) { //C.AND
+        mem_rdata_q := 
+          Cat(
+            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
+            mem_rdata_q(24,15),
+            "b111".U(3.W), //14,12
+            mem_rdata_q(11, 0),
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????01") ){// C.BEQZ
+        val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
+        mem_rdata_q := 
+          Cat(
+            Cat( temp.extract(11), temp(9,4) ), //31,25
+            mem_rdata_q(24,15),
+            "b000".U(3.W), //14,12
+            Cat( temp(3,0), temp.extract(10) ), //11,7
+            mem_rdata_q(6,0)
+          )
+
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_111?????_??????01") ){// C.BNEZ
+        val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
+        mem_rdata_q := 
+          Cat(
+            Cat( temp.extract(11), temp(9,4) ), //31,25
+            mem_rdata_q(24,15),
+            "b001".U(3.W), //14,12
+            Cat( temp(3,0), temp.extract(10) ), //11,7
+            mem_rdata_q(6,0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_000?????_??????10") ){// C.SLLI
+        mem_rdata_q := 
+          Cat(
+            "b0000000".U(7.W), //31,25
+            mem_rdata_q(24, 15),
+            "b001".U(3.W), //14,12
+            mem_rdata_q(11, 0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_010?????_??????10") ){// C.LWSP
+        mem_rdata_q := 
+          Cat(
+              Cat(0.U(4.W), mem_rdata_latched(3,2), mem_rdata_latched.extract(12), mem_rdata_latched(6,4), 0.U(2.W)), //31,20
+              mem_rdata_q(19, 15),
+              "b010".U(3.W),//14,12
+              mem_rdata_q(11, 0)
+          )
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?????_??????10") ){
+        when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
+          mem_rdata_q := 
+            Cat(
+              0.U(12.W), //31,20
+              mem_rdata_q(19, 15),
+              "b000".U(3.W),//14,12
+              mem_rdata_q(11, 0)
+            )
+        }
+        when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
+          mem_rdata_q := 
+            Cat(
+              "b0000000".U(7.W), //31,25
+              mem_rdata_q(24, 15),
+              "b000".U(3.W),//14,12
+              mem_rdata_q(11, 0)
+            )
+        }
+        when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
+          mem_rdata_q := 
+            Cat(
+              0.U(12.W), //31,20
+              mem_rdata_q(19, 15),
+              "b000".U(3.W),//14,12
+              mem_rdata_q(11, 0)
+            )
+        }
+        when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
+          mem_rdata_q := 
+            Cat(
+              "b0000000".U(7.W), //31,25
+              mem_rdata_q(24, 15),
+              "b000".U(3.W),//14,12
+              mem_rdata_q(11, 0)
+            )
+        }
+      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????10") ){ // C.SWSP
+        mem_rdata_q := 
+          Cat(
+            Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched(12,11)), //31,25
+            mem_rdata_q(24, 15),
+            "b010".U(3.W),//14,12
+            Cat(mem_rdata_latched(11,9), 0.U(2.W)), //11,7
+            mem_rdata_q(6, 0)
+          )
       }
+    } .elsewhen(mem_xfer){
+      mem_rdata_q := mem_rdata_latched
     }
+  } else {
+    mem_rdata_q := io.mem.rdata
   }
 
 
@@ -1387,53 +1483,74 @@ extends Module{
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   if( ENABLE_IRQ ){
-    var next_irq_pending = irq_pending & LATCHED_IRQ
 
-    when(irq_state.extract(1) & cpu_state_fetch === cpu_state ){
-      next_irq_pending = next_irq_pending & irq_mask
-    } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
-      if( CATCH_ILLINSN ){
-        when( instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active ){
-          next_irq_pending = next_irq_pending | (1.U << irq_ebreak)
-        }
-      }
-    } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
-      if( WITH_PCPI & CATCH_ILLINSN ){
-        when( instr_trap & ~pcpi_int_ready & (pcpi_timeout | instr_ecall_ebreak) & ~irq_mask.extract(irq_ebreak) & ~irq_active ){
-          next_irq_pending = next_irq_pending | (1.U << irq_ebreak)
-        }        
-      }
-    }
 
-    next_irq_pending = next_irq_pending | io.irq
 
-    if(ENABLE_IRQ_TIMER){
-      when( timer === 1.U ){
-        next_irq_pending = next_irq_pending | (1.U << irq_timer)
-      }
-    }
+    // var next_irq_pending = irq_pending & LATCHED_IRQ
 
+    val next_irq_pending =
+      Mux1H(Seq(
+        (cpu_state_fetch  === cpu_state & irq_state.extract(1))                                     -> 
+          (irq_pending & LATCHED_IRQ & irq_mask),
+        (cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active) -> 
+          ((irq_pending & LATCHED_IRQ) | (if( CATCH_ILLINSN ){ (1.U << irq_ebreak) } else {0.U})),
+        (cpu_state_ld_rs2 === cpu_state & instr_trap & ~pcpi_int_ready & (pcpi_timeout | instr_ecall_ebreak) & ~irq_mask.extract(irq_ebreak) & ~irq_active) ->
+          ((irq_pending & LATCHED_IRQ) | (if( WITH_PCPI & CATCH_ILLINSN ){(1.U << irq_ebreak)} else {0.U}))
+      ))
+
+
+
+
+    val busError_irq_pending = Wire( UInt(32.W) )
 
     if (CATCH_MISALIGN){
-      when( (mem_do_rdata | mem_do_wdata)){
-        when((mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U ) & ( ~irq_mask.extract(irq_buserror) & ~irq_active) ){
-          next_irq_pending = next_irq_pending | (1.U << irq_buserror)
-        }
-        when((mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U) & ( ~irq_mask.extract(irq_buserror) & ~irq_active)) {
-          next_irq_pending = next_irq_pending | (1.U << irq_buserror)
-        }          
-      }
-
-      when( mem_do_rinst & (if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc(1,0) =/= 0.U})){
-        when( ~irq_mask.extract(irq_buserror) & ~irq_active){
-          next_irq_pending = next_irq_pending | (1.U << irq_buserror)
-        }          
-      }    
+      when( ( ~irq_mask.extract(irq_buserror) & ~irq_active ) & (
+        (( mem_do_rdata | mem_do_wdata ) & ( ( mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U ) | ( mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U ) )) |
+        (  mem_do_rinst                  & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc(1,0) =/= 0.U} )                                      )
+      ) ){
+        busError_irq_pending := (1.U << irq_buserror)
+      } .otherwise{
+        busError_irq_pending := 0.U
+      }  
+    } else{
+      busError_irq_pending := 0.U
     }
 
+
+
+
+    val irq_pending_dnxt = 
+      next_irq_pending | io.irq |
+      Mux( (if( ENABLE_IRQ_TIMER ){timer === 1.U} else {false.B}), (1.U << irq_timer), 0.U ) |
+      busError_irq_pending
+
     when(true.B){
-      irq_pending := next_irq_pending & ~MASKED_IRQ
+      irq_pending := irq_pending_dnxt & ~MASKED_IRQ
     }
   }
 
@@ -1647,7 +1764,7 @@ extends Module{
         } .otherwise{
           cpu_state := cpu_state_trap
         }
-      }         
+      }
     } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
       when(instr_rdcycle){
         reg_out := count_cycle(31,0)

@@ -28,7 +28,7 @@ class Pcpi_fast_mul(
     EXTRA_MUL_FFS: Boolean = false,
     EXTRA_INSN_FFS: Boolean = false,
   ) extends Module{
-  val io: PCPI_Access_Bundle = IO(new PCPI_Access_Bundle)
+  val io: PCPI_Access_Bundle = IO( Flipped(new PCPI_Access_Bundle) )
 
 
 	val pcpi_insn_valid = io.valid & io.insn(6,0) === "b0110011".U & io.insn(31,25) === "b0000001".U
@@ -48,8 +48,8 @@ class Pcpi_fast_mul(
 	val shift_out = RegNext(instr_any_mulh)
   val active = RegInit(0.U(4.W))
 
-  val rs1 = Reg(UInt(32.W))
-  val rs2 = Reg(UInt(32.W))
+  val rs1 = Reg(UInt(33.W))
+  val rs2 = Reg(UInt(33.W))
   val rs1_q = RegEnable(rs1, active.extract(0))
   val rs2_q = RegEnable(rs2, active.extract(0))
 
@@ -63,8 +63,8 @@ class Pcpi_fast_mul(
 
 
 		when( instr_any_mul & (if( EXTRA_MUL_FFS ){ active === 0.U } else{ active(1,0) === 0.U }) ){
-			rs1 := Mux( instr_rs1_signed, io.rs1.asSInt, io.rs1 )
-			rs2 := Mux( instr_rs2_signed, io.rs2.asSInt, io.rs2 )
+			rs1 := Mux( instr_rs1_signed, Cat( io.rs1.extract(31), io.rs1), io.rs1 )
+			rs2 := Mux( instr_rs2_signed, Cat( io.rs2.extract(31), io.rs2), io.rs2 )
       active := Cat( active(2,0), 1.U(1.W) )
     } .otherwise{
 			active := Cat( active(2,0), 0.U(1.W) )
@@ -78,9 +78,9 @@ class Pcpi_fast_mul(
 
   io.rd := (
     if( EXTRA_MUL_FFS ){
-      Mux( shift_out, rd_q >> 32, rd_q )
+      Mux( shift_out, rd_q >> 32, rd_q ).asUInt
     } else{
-      Mux( shift_out, rd >> 32, rd )
+      Mux( shift_out, rd >> 32, rd ).asUInt
     }      
   )
 

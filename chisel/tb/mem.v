@@ -10,7 +10,7 @@ module mem(
     output reg tests_passed
 );
 
-    reg [31:0] sram[0:65535];
+    reg [31:0] sram[0:128*1024/4-1];
 
     always @(posedge clock) begin
         if( mem_valid ) begin
@@ -50,7 +50,7 @@ module mem(
                 tests_passed = 1;
             end
             if( mem_addr == 32'h10000000 ) begin
-                $write("%c", latched_wdata[7:0]);
+                $write("%c", mem_wdata[7:0]);
             end
         end
     end
