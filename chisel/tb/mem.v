@@ -12,8 +12,10 @@ module mem(
 
     reg [31:0] sram[0:128*1024/4-1];
 
+    wire misAlign = mem_addr[1:0] != 0;
+
     always @(posedge clock) begin
-        if( mem_valid ) begin
+        if( mem_valid & mem_addr[31:17] == 0 ) begin
             if( mem_wstrb == 4'b0 )begin //read
                 mem_rdata <= sram[ mem_addr[16:2] ];
             end else begin

@@ -1355,7 +1355,7 @@ extends Module{
       (instr_srl | instr_srli | instr_sra | instr_srai) -> alu_shr,      
       )} else { Seq() })
   )
-
+  dontTouch(alu_out)
   val alu_out_q = RegNext(alu_out)
   val alu_out_0_q = RegNext(alu_out_0)
 
@@ -1598,9 +1598,9 @@ extends Module{
       )
 
     when(latched_branch){
-      printf( "ST_RD:  %d 0x%x, BRANCH 0x%x\n", latched_rd, reg_pc + Mux(latched_compr, 2.U, 4.U), current_pc)
+      // printf( "ST_RD:  %d 0x%x, BRANCH 0x%x\n", latched_rd, reg_pc + Mux(latched_compr, 2.U, 4.U), current_pc)
     } .elsewhen(latched_store & ~latched_branch){
-      printf( "ST_RD:  %d 0x%x\n", latched_rd, Mux(latched_stalu, alu_out_q, reg_out))
+      // printf( "ST_RD:  %d 0x%x\n", latched_rd, Mux(latched_stalu, alu_out_q, reg_out))
     }
     
     if( ENABLE_IRQ ){
@@ -1724,7 +1724,7 @@ extends Module{
       }
       cpu_state := cpu_state_exec;          
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1732,13 +1732,13 @@ extends Module{
       mem_do_rinst := true.B
     } .elsewhen( if(CATCH_ILLINSN || WITH_PCPI) {instr_trap} else {false.B} ){
       if (WITH_PCPI){
-        printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+        // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
         reg_op1    := cpuregs_rs1
         dbg_rs1val := cpuregs_rs1
         dbg_rs1val_valid := true.B
         if (ENABLE_REGS_DUALPORT){
           pcpi_valid := true.B
-          printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
+          // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
           reg_sh  := cpuregs_rs2
           reg_op2 := cpuregs_rs2
           dbg_rs2val := cpuregs_rs2
@@ -1781,14 +1781,14 @@ extends Module{
       latched_store := true.B
       cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_getq} else {false.B}){
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_store := true.B
       cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_setq} else {false.B}){
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1800,7 +1800,7 @@ extends Module{
       irq_active := false.B
       latched_branch := true.B
       latched_store := true.B
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1809,7 +1809,7 @@ extends Module{
     .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
       latched_store := true.B
       reg_out := irq_mask
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       irq_mask := cpuregs_rs1 | MASKED_IRQ
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1818,20 +1818,20 @@ extends Module{
     .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
       latched_store := true.B
       reg_out := timer;
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       timer := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_fetch
     } .elsewhen( if( !BARREL_SHIFTER ){is_slli_srli_srai} else {false.B} ){
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       reg_sh := decoded_rs2
       cpu_state := cpu_state_shift
-    } .elsewhen( if( BARREL_SHIFTER ){is_jalr_addi_slti_sltiu_xori_ori_andi | is_slli_srli_srai} else {false.B} ){
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+    } .elsewhen( (if( BARREL_SHIFTER ){ is_slli_srli_srai} else {false.B}) | is_jalr_addi_slti_sltiu_xori_ori_andi ){
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
@@ -1843,12 +1843,12 @@ extends Module{
       }
       cpu_state := cpu_state_exec
     } .otherwise{
-      printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
+      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       if (ENABLE_REGS_DUALPORT){
-        printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
+        // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
         reg_sh := cpuregs_rs2
         reg_op2 := cpuregs_rs2
         dbg_rs2val := cpuregs_rs2
@@ -1875,7 +1875,7 @@ extends Module{
 
 
   } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
-    printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
+    // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
     reg_sh  := cpuregs_rs2
     reg_op2 := cpuregs_rs2
     dbg_rs2val := cpuregs_rs2
