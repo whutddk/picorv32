@@ -621,7 +621,7 @@ extends Module{
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????10") ){ // C.SWSP
         mem_rdata_q := 
           Cat(
-            Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched(12,11)), //31,25
+            Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched.extract(12)), //31,25
             mem_rdata_q(24, 15),
             "b010".U(3.W),//14,12
             Cat(mem_rdata_latched(11,9), 0.U(2.W)), //11,7
