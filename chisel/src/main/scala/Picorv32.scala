@@ -1751,13 +1751,17 @@ extends Module{
             cpu_state     := cpu_state_fetch
           } .elsewhen(if (CATCH_ILLINSN) {pcpi_timeout | instr_ecall_ebreak} else {false.B}) {
             pcpi_valid := false.B 
+            printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
+            when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
+              cpu_state := cpu_state_fetch
+            } .otherwise{
+              cpu_state := cpu_state_trap
+            }
           }
         } else {
-          cpu_state := cpu_state_ld_rs2;              
+          cpu_state := cpu_state_ld_rs2
         }
-      }
-
-      if( CATCH_ILLINSN ){
+      } else {
         printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
         when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
           cpu_state := cpu_state_fetch
@@ -1765,6 +1769,9 @@ extends Module{
           cpu_state := cpu_state_trap
         }
       }
+
+
+
     } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
       when(instr_rdcycle){
         reg_out := count_cycle(31,0)
@@ -1805,8 +1812,7 @@ extends Module{
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_fetch
-    }
-    .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
+    } .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
       latched_store := true.B
       reg_out := irq_mask
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
@@ -1814,8 +1820,7 @@ extends Module{
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_fetch
-    }
-    .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
+    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
       latched_store := true.B
       reg_out := timer;
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
