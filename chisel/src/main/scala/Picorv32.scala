@@ -443,116 +443,116 @@ extends Module{
         mem_rdata_q :=
           Cat(
             Cat(0.U(2.W), mem_rdata_latched(10,7), mem_rdata_latched(12,11), mem_rdata_latched.extract(5), mem_rdata_latched.extract(6), 0.U(2.W)), //31,20
-            mem_rdata_q(19,15),
+            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
             "b000".U(3.W), //14,12
-            mem_rdata_q(11,0)
+             Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0) )
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_010?????_??????00") ){// C.LW
         mem_rdata_q :=
           Cat(
             Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched(12,10), mem_rdata_latched.extract(6), 0.U(2.W)), //31,20
-            mem_rdata_q(19,15),
+            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
             "b010".U(3.W), //14,12
-            mem_rdata_q(11,0)
+             Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0) )
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????00") ){// C.SW
         mem_rdata_q :=
           Cat(
             Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched.extract(12)), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15)),
             "b010".U(3.W),//14,12
             Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)),//11,7
-            mem_rdata_q(6,0)
+             Mux( mem_xfer, mem_rdata_latched(6,0), mem_rdata_q(6,0) )
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_0?0?????_??????01") ){ // C.ADDI // C.LI
         mem_rdata_q :=
           Cat(
             Cat( Fill( 7, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)), //31,20
-            mem_rdata_q(19,15),
+            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
             "b000".U(3.W),//14,12
-            mem_rdata_q(11,0),
+            Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0)),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_011?????_??????01") ){
         when( mem_rdata_latched(11,7) === 2.U ) { // C.ADDI16SP
           mem_rdata_q :=
             Cat(
               Cat( Fill(3, mem_rdata_latched.extract(12)), mem_rdata_latched(4,3), mem_rdata_latched.extract(5), mem_rdata_latched.extract(2), mem_rdata_latched.extract(6), 0.U(4.W)), //31,20
-              mem_rdata_q(19,15),
+              Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15)),
               "b000".U(3.W), //14,12
-                mem_rdata_q(11,0)
+              Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0))
             )
         } .otherwise{ // C.LUI
           mem_rdata_q :=
             Cat(
               Cat( Fill( 15, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)),//31,12
-              mem_rdata_q(11,0)
+              Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0))
             )
         }
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?00??_??????01") ) { // C.SRLI
         mem_rdata_q :=
           Cat(
             "b0000000".U(7.W), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15)),
             "b101".U(3.W), //14,12
-            mem_rdata_q(11,0)
+            Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0)),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?01??_??????01") ) { // C.SRAI
         mem_rdata_q :=
           Cat(
             "b0100000".U(7.W), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
             "b101".U(3.W), //14,12
-            mem_rdata_q(11,0)
+            Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0) )
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?10??_??????01") ) { // C.ANDI
         mem_rdata_q :=
           Cat(
             Cat( Fill( 7, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)), //31,20
-            mem_rdata_q(19,15),
+            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
             "b111".U(3.W), //14,12
-            mem_rdata_q(11, 0),
+            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?00???01") ) { // C.SUB, 
         mem_rdata_q := 
           Cat(
             Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
             "b000".U(3.W), //14,12
-            mem_rdata_q(11, 0),
+            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?01???01") ) { //C.XOR, 
         mem_rdata_q := 
           Cat(
             Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
             "b100".U(3.W), //14,12
-            mem_rdata_q(11, 0),
+            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?10???01") ) { //C.OR, 
         mem_rdata_q := 
           Cat(
             Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
             "b110".U(3.W), //14,12
-            mem_rdata_q(11, 0),
+            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?11???01") ) { //C.AND
         mem_rdata_q := 
           Cat(
             Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24,15)),
             "b111".U(3.W), //14,12
-            mem_rdata_q(11, 0),
+            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0)),
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????01") ){// C.BEQZ
         val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
         mem_rdata_q := 
           Cat(
             Cat( temp.extract(11), temp(9,4) ), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24,15)),
             "b000".U(3.W), //14,12
             Cat( temp(3,0), temp.extract(10) ), //11,7
-            mem_rdata_q(6,0)
+            Mux( mem_xfer, mem_rdata_latched(6, 0), mem_rdata_q(6,0) )
           )
 
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_111?????_??????01") ){// C.BNEZ
@@ -560,72 +560,72 @@ extends Module{
         mem_rdata_q := 
           Cat(
             Cat( temp.extract(11), temp(9,4) ), //31,25
-            mem_rdata_q(24,15),
+            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24,15) ),
             "b001".U(3.W), //14,12
             Cat( temp(3,0), temp.extract(10) ), //11,7
-            mem_rdata_q(6,0)
+            Mux( mem_xfer, mem_rdata_latched(6, 0), mem_rdata_q(6,0) )
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_000?????_??????10") ){// C.SLLI
         mem_rdata_q := 
           Cat(
             "b0000000".U(7.W), //31,25
-            mem_rdata_q(24, 15),
+            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24, 15) ),
             "b001".U(3.W), //14,12
-            mem_rdata_q(11, 0)
+            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) )
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_010?????_??????10") ){// C.LWSP
         mem_rdata_q := 
           Cat(
               Cat(0.U(4.W), mem_rdata_latched(3,2), mem_rdata_latched.extract(12), mem_rdata_latched(6,4), 0.U(2.W)), //31,20
-              mem_rdata_q(19, 15),
+              Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19, 15)),
               "b010".U(3.W),//14,12
-              mem_rdata_q(11, 0)
+              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
           )
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?????_??????10") ){
         when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
           mem_rdata_q := 
             Cat(
               0.U(12.W), //31,20
-              mem_rdata_q(19, 15),
+              Mux( mem_xfer, mem_rdata_latched(19, 15), mem_rdata_q(19, 15)),
               "b000".U(3.W),//14,12
-              mem_rdata_q(11, 0)
+              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
             )
         }
         when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
           mem_rdata_q := 
             Cat(
               "b0000000".U(7.W), //31,25
-              mem_rdata_q(24, 15),
+              Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24, 15)),
               "b000".U(3.W),//14,12
-              mem_rdata_q(11, 0)
+              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
             )
         }
         when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
           mem_rdata_q := 
             Cat(
               0.U(12.W), //31,20
-              mem_rdata_q(19, 15),
+              Mux( mem_xfer, mem_rdata_latched(19, 15), mem_rdata_q(19, 15)),
               "b000".U(3.W),//14,12
-              mem_rdata_q(11, 0)
+              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
             )
         }
         when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
           mem_rdata_q := 
             Cat(
               "b0000000".U(7.W), //31,25
-              mem_rdata_q(24, 15),
+              Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24, 15)),
               "b000".U(3.W),//14,12
-              mem_rdata_q(11, 0)
+              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
             )
         }
       } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????10") ){ // C.SWSP
         mem_rdata_q := 
           Cat(
             Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched.extract(12)), //31,25
-            mem_rdata_q(24, 15),
+            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24, 15) ),
             "b010".U(3.W),//14,12
             Cat(mem_rdata_latched(11,9), 0.U(2.W)), //11,7
-            mem_rdata_q(6, 0)
+            Mux( mem_xfer, mem_rdata_latched(6, 0), mem_rdata_q(6, 0))
           )
       }
     }
