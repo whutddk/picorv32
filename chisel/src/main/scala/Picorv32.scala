@@ -1398,14 +1398,14 @@ extends Module{
   val cpuregs_raddr1 = if(ENABLE_REGS_DUALPORT) {decoded_rs1} else { decoded_rs }
   val cpuregs_raddr2 = if(ENABLE_REGS_DUALPORT) {decoded_rs2} else { 0.U(6.W) }
 
-  val cpuregs = Mem(32, UInt(32.W))
+  val cpuregs = Mem(regfile_size, UInt(32.W))
 
   when( ~reset.asBool & cpuregs_write & latched_rd =/= 0.U ){
-    cpuregs(cpuregs_waddr(4,0)) := cpuregs_wrdata
+    cpuregs(cpuregs_waddr(5,0)) := cpuregs_wrdata
   }
 
-  val cpuregs_rdata1 = cpuregs(cpuregs_raddr1(4,0))
-  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2(4,0))
+  val cpuregs_rdata1 = cpuregs(cpuregs_raddr1(5,0))
+  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2(5,0))
 
 
   val cpuregs_rs1 = Wire(UInt(32.W))
