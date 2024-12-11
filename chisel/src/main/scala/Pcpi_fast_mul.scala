@@ -50,11 +50,11 @@ class Pcpi_fast_mul(
 
   val rs1 = Reg(UInt(33.W))
   val rs2 = Reg(UInt(33.W))
-  val rs1_q = RegEnable(rs1, active.extract(0))
-  val rs2_q = RegEnable(rs2, active.extract(0))
+  val rs1_q = RegNext(rs1)
+  val rs2_q = RegNext(rs2)
 
-  val rd = RegEnable( (if(EXTRA_MUL_FFS){ rs1_q.asSInt * rs2_q.asSInt  } else { rs1.asSInt * rs2.asSInt })  , active.extract(1))
-  val rd_q = RegEnable( rd, active.extract(2))
+  val rd   = RegNext( (if(EXTRA_MUL_FFS){ rs1_q.asSInt * rs2_q.asSInt  } else { rs1.asSInt * rs2.asSInt }) )
+  val rd_q = RegNext( rd )
 
 
 
