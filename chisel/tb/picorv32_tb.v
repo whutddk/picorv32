@@ -284,6 +284,19 @@ module picorv32_tb (
 
 	picorv32 #(
 
+		.ENABLE_COUNTERS(1),
+		.ENABLE_COUNTERS64(1),
+		.ENABLE_REGS_16_31(1),
+		.ENABLE_REGS_DUALPORT(1),
+		.LATCHED_MEM_RDATA(0),
+		.TWO_STAGE_SHIFT(1),
+		.BARREL_SHIFTER(0),
+		.TWO_CYCLE_COMPARE(1),
+		.TWO_CYCLE_ALU(1),
+
+		.CATCH_MISALIGN(1),
+		.CATCH_ILLINSN(1),
+
 		.COMPRESSED_ISA(1),
 		.ENABLE_MUL(1),
 		.ENABLE_FAST_MUL(1),
@@ -337,11 +350,14 @@ module picorv32_tb (
 
 
 	always @(posedge clock) begin
-		if( diff_trap != trap ) $finish;
-		if( diff_mem_valid != mem_valid ) $finish;
-		if( diff_mem_addr  != mem_addr )  $finish;
-		if( diff_mem_wdata != mem_wdata ) $finish;
-		if( diff_mem_wstrb != mem_wstrb ) $finish;
+		if( ~reset ) begin
+			if( diff_trap != trap ) $finish;
+			if( diff_mem_valid != mem_valid ) $finish;
+			if( diff_mem_addr  != mem_addr )  $finish;
+			if( diff_mem_wdata != mem_wdata ) $finish;
+			if( diff_mem_wstrb != mem_wstrb ) $finish;			
+		end
+
 
 	end
 
