@@ -161,7 +161,7 @@ module picorv32_tb (
 
 
     initial begin
-        clock = 0;
+        clock = 1;
         reset = 1;
     end
 
