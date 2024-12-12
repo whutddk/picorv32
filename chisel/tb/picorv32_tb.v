@@ -253,6 +253,121 @@ module picorv32_tb (
 	end
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+`ifdef ORI_DIFF
+
+	wire diff_trap;
+
+	wire diff_mem_valid;
+	wire diff_mem_instr;
+
+	wire [31:0] diff_mem_addr;
+	wire [31:0] diff_mem_wdata;
+	wire [ 3:0] diff_mem_wstrb;
+
+	picorv32 #(
+
+		.COMPRESSED_ISA(1),
+		.ENABLE_MUL(1),
+		.ENABLE_FAST_MUL(1),
+		.ENABLE_DIV(1),
+		.ENABLE_IRQ(1),
+		.ENABLE_IRQ_QREGS(1),
+		.ENABLE_IRQ_TIMER(1),
+		.ENABLE_TRACE(1)
+
+		) diff_picorv32 (
+			.clk(clock),
+			.resetn(~reset),
+
+			.trap(diff_trap),
+
+			.mem_valid(diff_mem_valid),
+			.mem_instr(diff_mem_instr),
+			.mem_ready(mem_ready),
+
+			.mem_addr (diff_mem_addr),
+			.mem_wdata(diff_mem_wdata),
+			.mem_wstrb(diff_mem_wstrb),
+			.mem_rdata(mem_rdata),
+
+			.mem_la_read(),
+			.mem_la_write(),
+			.mem_la_addr(),
+			.mem_la_wdata(),
+			.mem_la_wstrb(),
+
+		// Pico Co-Processor Interface (PCPI)
+		.pcpi_valid(),
+		.pcpi_insn(),
+		.pcpi_rs1(),
+		.pcpi_rs2(),
+		.pcpi_wr(1'b0),
+		.pcpi_rd(32'd0),
+		.pcpi_wait(1'b1),
+		.pcpi_ready(1'b1),
+
+		// IRQ Interface
+		.irq(irq),
+		.eoi(),
+
+		// Trace Interface
+		.trace_valid(),
+		.trace_data()
+);
+
+
+
+
+	always @(posedge clock) begin
+		if( diff_trap != trap ) $finish;
+		if( diff_mem_valid != mem_valid ) $finish;
+		if( diff_mem_addr  != mem_addr )  $finish;
+		if( diff_mem_wdata != mem_wdata ) $finish;
+		if( diff_mem_wstrb != mem_wstrb ) $finish;
+
+	end
+
+
+
+
+`endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 endmodule
 
 
