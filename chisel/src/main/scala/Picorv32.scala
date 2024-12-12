@@ -101,7 +101,7 @@ class Picorv32(
   ENABLE_COUNTERS: Boolean = true,
   ENABLE_COUNTERS64: Boolean = true,
   ENABLE_REGS_16_31: Boolean = true,
-  ENABLE_REGS_DUALPORT: Boolean = false,
+  ENABLE_REGS_DUALPORT: Boolean = true,
   LATCHED_MEM_RDATA: Boolean = false,
   TWO_STAGE_SHIFT: Boolean = true,
   BARREL_SHIFTER: Boolean = false,
@@ -1405,7 +1405,7 @@ extends Module{
   }
 
   val cpuregs_rdata1 = cpuregs(cpuregs_raddr1(5,0))
-  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2(5,0))
+  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2(4,0))
 
 
   val cpuregs_rs1 = Wire(UInt(32.W))
@@ -1509,22 +1509,29 @@ extends Module{
 
   if( ENABLE_IRQ ){
 
-
-
-    // var next_irq_pending = irq_pending & LATCHED_IRQ
-
     val next_irq_pending =
-      Mux1H(Seq(
-        (cpu_state_fetch  === cpu_state & irq_state.extract(1))                                     -> 
-          (irq_pending & LATCHED_IRQ & irq_mask),
-        (cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active) -> 
-          ((irq_pending & LATCHED_IRQ) | (if( CATCH_ILLINSN ){ (1.U << irq_ebreak) } else {0.U})),
-        (cpu_state_ld_rs2 === cpu_state & instr_trap & ~pcpi_int_ready & (pcpi_timeout | instr_ecall_ebreak) & ~irq_mask.extract(irq_ebreak) & ~irq_active) ->
-          ((irq_pending & LATCHED_IRQ) | (if( WITH_PCPI & CATCH_ILLINSN ){(1.U << irq_ebreak)} else {0.U}))
-      ))
-
-
-
+      (
+        (irq_pending & LATCHED_IRQ) & (
+          Mux( (cpu_state_fetch  === cpu_state & irq_state.extract(1)), irq_mask, "hFFFFFFFF".U(32.W))
+        ) |
+          Mux( if( WITH_PCPI & CATCH_ILLINSN ) {(cpu_state_ld_rs2 === cpu_state & instr_trap & ~pcpi_int_ready & (pcpi_timeout | instr_ecall_ebreak) & ~irq_mask.extract(irq_ebreak) & ~irq_active)} else {false.B}, 1.U << irq_ebreak, 0.U ) |
+          Mux(
+            if (CATCH_ILLINSN){
+              if (WITH_PCPI ) {
+                if(ENABLE_REGS_DUALPORT){
+                  ( cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active) & (pcpi_timeout || instr_ecall_ebreak) & ~(pcpi_int_ready)
+                } else {
+                  false.B
+                }
+              } else {
+                ( cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active)
+              }
+            } else {
+              false.B
+            },
+            1.U << irq_ebreak, 0.U
+          )
+      )
 
     val busError_irq_pending = Wire( UInt(32.W) )
 
