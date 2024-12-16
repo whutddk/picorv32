@@ -1401,11 +1401,11 @@ extends Module{
   val cpuregs = Mem(regfile_size, UInt(32.W))
 
   when( ~reset.asBool & cpuregs_write & latched_rd =/= 0.U ){
-    cpuregs(cpuregs_waddr(5,0)) := cpuregs_wrdata
+    cpuregs(cpuregs_waddr) := cpuregs_wrdata
   }
 
-  val cpuregs_rdata1 = cpuregs(cpuregs_raddr1(5,0))
-  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2(4,0))
+  val cpuregs_rdata1 = cpuregs(cpuregs_raddr1)
+  val cpuregs_rdata2 = cpuregs(cpuregs_raddr2)
 
 
   val cpuregs_rs1 = Wire(UInt(32.W))
