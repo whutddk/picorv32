@@ -1432,28 +1432,18 @@ extends Module{
 
 
   when( cpu_state_fetch === cpu_state ){
-    if (ENABLE_IRQ){
-      when((decoder_trigger & ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state =/= 0.U ){
+    when( decoder_trigger ){
+      when(( ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state =/= 0.U ){
 
-      } .elsewhen( (decoder_trigger | do_waitirq) & instr_waitirq ){
+      } .elsewhen( instr_waitirq ){
 
-      } .elsewhen(decoder_trigger){
-        when(instr_jal){
-        } .otherwise{
-          cpu_state := cpu_state_ld_rs1
-        }
-      }
-    } else {
-      when(decoder_trigger){
-        when(instr_jal){
-        } .otherwise{
-          cpu_state := cpu_state_ld_rs1
-        }
-      }
+      } .elsewhen(~instr_jal){
+        cpu_state := cpu_state_ld_rs1
+      }      
     }
 
   } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
-    when(is_lui_auipc_jal){
+    when(is_lui_auipc_jal | is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi){
       cpu_state := cpu_state_exec
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
       cpu_state := cpu_state_ldmem
@@ -1463,20 +1453,8 @@ extends Module{
       } .otherwise{
         cpu_state := cpu_state_trap
       }
-    } .elsewhen( is_rdcycle_rdcycleh_rdinstr_rdinstrh ){
+    } .elsewhen( is_rdcycle_rdcycleh_rdinstr_rdinstrh | instr_getq | instr_setq | instr_retirq | instr_maskirq | instr_timer ){
       cpu_state := cpu_state_fetch
-    } .elsewhen( instr_getq ){
-      cpu_state := cpu_state_fetch
-    } .elsewhen( instr_setq ){
-      cpu_state := cpu_state_fetch
-    } .elsewhen( instr_retirq ){
-      cpu_state := cpu_state_fetch
-    } .elsewhen( instr_maskirq ){
-      cpu_state := cpu_state_fetch
-    } .elsewhen( instr_timer ){
-      cpu_state := cpu_state_fetch
-    } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
-      cpu_state := cpu_state_exec
     } .otherwise{
       if (ENABLE_REGS_DUALPORT){
         when(is_sb_sh_sw){
@@ -1489,16 +1467,13 @@ extends Module{
       }
     }
 
-
-  } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
+  } .elsewhen( cpu_state_ld_rs2 === cpu_state ){ // only ENABLE_REGS_DUALPORT will entry this state
     when(is_sb_sh_sw){
       cpu_state := cpu_state_stmem
     } .otherwise{
       cpu_state := cpu_state_exec
     }
-
-
-  } .elsewhen( cpu_state_exec  === cpu_state  ){
+  } .elsewhen( cpu_state_exec === cpu_state ){
     when( if (TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) {(alu_wait | alu_wait_2)} else { false.B }){
     } .elsewhen(is_beq_bne_blt_bge_bltu_bgeu){
       when(mem_done){
@@ -1509,25 +1484,14 @@ extends Module{
     }
     
   } .elsewhen( cpu_state_stmem === cpu_state ){
-
-    when(~mem_do_prefetch | mem_done){
-      when(~mem_do_prefetch & mem_done){
-        cpu_state := cpu_state_fetch
-      }
+    when(~mem_do_prefetch & mem_done){
+      cpu_state := cpu_state_fetch
     }
-
   } .elsewhen( cpu_state_ldmem === cpu_state ){
-    when(~mem_do_prefetch | mem_done){
-      when(~mem_do_prefetch & mem_done){
-        cpu_state := cpu_state_fetch
-      }
+    when(~mem_do_prefetch & mem_done){
+      cpu_state := cpu_state_fetch
     }
-  
   }
-
-
-
-
 
   if(CATCH_MISALIGN){
     when(~( ~irq_mask.extract(irq_buserror) & ~irq_active)){
