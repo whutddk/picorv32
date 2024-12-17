@@ -582,21 +582,21 @@ extends Module{
   }
 
 
-    if( ENABLE_IRQ ){
-      instr_maskirq := RegEnable(mem_rdata_q === BitPat("b0000011??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
-    } else {
-      instr_maskirq := false.B
-    }
+  if( ENABLE_IRQ ){
+    instr_maskirq := RegEnable(mem_rdata_q === BitPat("b0000011??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+  } else {
+    instr_maskirq := false.B
+  }
 
-    if( ENABLE_IRQ & ENABLE_IRQ_QREGS ){
-      instr_getq    := RegEnable(mem_rdata_q === BitPat("b0000000??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
-      instr_setq    := RegEnable(mem_rdata_q === BitPat("b0000001??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
-      instr_timer   := RegEnable(mem_rdata_q === BitPat("b0000101??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
-    } else {
-      instr_getq    := false.B
-      instr_setq    := false.B
-      instr_timer   := false.B
-    }
+  if( ENABLE_IRQ & ENABLE_IRQ_QREGS ){
+    instr_getq    := RegEnable(mem_rdata_q === BitPat("b0000000??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+    instr_setq    := RegEnable(mem_rdata_q === BitPat("b0000001??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+    instr_timer   := RegEnable(mem_rdata_q === BitPat("b0000101??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+  } else {
+    instr_getq    := false.B
+    instr_setq    := false.B
+    instr_timer   := false.B
+  }
 
 
 
@@ -908,11 +908,6 @@ extends Module{
 
 
 
-
-
-
-  reg_out := 0.U
-
   alu_wait := false.B
   alu_wait_2 := false.B
 
@@ -1065,7 +1060,6 @@ extends Module{
       } .elsewhen( (decoder_trigger | do_waitirq) & instr_waitirq ){
         when(irq_pending =/= 0.U){
           latched_store := true.B
-          reg_out := irq_pending
           reg_next_pc := current_pc + 4.U
           mem_do_rinst := true.B
         } .otherwise{
@@ -1117,12 +1111,8 @@ extends Module{
 
 
   } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
-    reg_op1 := 0.U
-    reg_op2 := 0.U
-
     when(is_lui_auipc_jal){
-      reg_op1 := Mux(instr_lui, 0.U, reg_pc)
-      reg_op2 := decoded_imm
+
       if (TWO_CYCLE_ALU){
         alu_wait := true.B
       } else {
@@ -1130,35 +1120,20 @@ extends Module{
       }
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       mem_do_rinst := true.B
     } .elsewhen( instr_trap ){
       printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
     } .elsewhen( is_rdcycle_rdcycleh_rdinstr_rdinstrh ){
-      when(instr_rdcycle){
-        reg_out := count_cycle(31,0)
-      }.elsewhen(instr_rdinstr){
-        reg_out := count_instr(31,0)
-      }
-
-      when(instr_rdinstrh){
-        reg_out := count_instr(63,32)
-      } .elsewhen(instr_rdcycleh){
-        reg_out := count_cycle(63,32)
-      } 
-
       latched_store := true.B
     } .elsewhen( instr_getq ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_store := true.B
     } .elsewhen( instr_setq ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_rd := latched_rd | irqregs_offset
@@ -1169,29 +1144,24 @@ extends Module{
       latched_branch := true.B
       latched_store := true.B
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
     } .elsewhen( instr_maskirq ){
       latched_store := true.B
-      reg_out := irq_mask
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       irq_mask := cpuregs_rs1 | MASKED_IRQ
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
     } .elsewhen( instr_timer ){
       latched_store := true.B
-      reg_out := timer
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       timer := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
     } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      reg_op2 := Mux(is_slli_srli_srai, decoded_rs2, decoded_imm)
       if (TWO_CYCLE_ALU){
         alu_wait := true.B
       } else {
@@ -1199,12 +1169,10 @@ extends Module{
       }
     } .otherwise{
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
 
       // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
-      reg_op2 := cpuregs_rs2
       dbg_rs2val := cpuregs_rs2
       dbg_rs2val_valid := true.B
 
@@ -1223,7 +1191,6 @@ extends Module{
 
 
   } .elsewhen( cpu_state_exec  === cpu_state  ){
-    reg_out := reg_pc + decoded_imm
     when( if (TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) {(alu_wait | alu_wait_2)} else { false.B }){
       mem_do_rinst := mem_do_prefetch & ~alu_wait_2
       alu_wait := alu_wait_2
@@ -1241,10 +1208,6 @@ extends Module{
     }
     
   } .elsewhen( cpu_state_stmem === cpu_state ){
-    if (ENABLE_TRACE) {
-      reg_out := reg_op2
-    }
-
     when(~mem_do_prefetch | mem_done){
       when(~mem_do_wdata){
 
@@ -1258,8 +1221,6 @@ extends Module{
           trace_valid := true.B
           trace_data  := Mux(irq_active, TRACE_IRQ, 0.U) | TRACE_ADDR | ((reg_op1 + decoded_imm) & "hffffffff".U)
         }
-
-        reg_op1 := reg_op1 + decoded_imm
       }
 
       when(~mem_do_prefetch & mem_done){
@@ -1286,18 +1247,10 @@ extends Module{
         if (ENABLE_TRACE){
           trace_valid := true.B
           trace_data := Mux(irq_active, TRACE_IRQ, 0.U) | TRACE_ADDR | ((reg_op1 + decoded_imm) & "hffffffff".U)
-        }
-        reg_op1 := reg_op1 + decoded_imm      
+        }   
       }
 
       when(~mem_do_prefetch & mem_done){
-
-        reg_out := Mux1H(Seq(
-          latched_is_lu -> mem_rdata_word,
-          latched_is_lh -> Cat( Fill(16, mem_rdata_word.extract(15)), mem_rdata_word(15,0) ),
-          latched_is_lb -> Cat( Fill(24, mem_rdata_word.extract(7)) , mem_rdata_word(7,0)  ),
-        ))
-
         decoder_trigger := true.B
         decoder_pseudo_trigger := true.B        
       }
@@ -1334,6 +1287,113 @@ extends Module{
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  when( cpu_state_ld_rs1 === cpu_state ){
+    when(is_lui_auipc_jal){
+      reg_op1 := Mux(instr_lui, 0.U, reg_pc)
+      reg_op2 := decoded_imm
+    } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
+      reg_op1 := cpuregs_rs1
+    } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
+      reg_op1 := cpuregs_rs1
+      reg_op2 := Mux(is_slli_srli_srai, decoded_rs2, decoded_imm)
+    } .otherwise{
+      reg_op1 := cpuregs_rs1
+      reg_op2 := cpuregs_rs2
+    }
+  } .elsewhen( cpu_state_stmem === cpu_state ){
+    when(~mem_do_prefetch | mem_done){
+      when(~mem_do_wdata){
+        reg_op1 := reg_op1 + decoded_imm
+      }
+    }
+  } .elsewhen( cpu_state_ldmem === cpu_state ){
+    when(~mem_do_prefetch | mem_done){
+      when(~mem_do_rdata){
+        reg_op1 := reg_op1 + decoded_imm
+      }
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+  reg_out := 0.U
+  when( cpu_state_fetch === cpu_state ){
+    if (ENABLE_IRQ){
+      when((decoder_trigger & ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state =/= 0.U ){
+      } .elsewhen( (decoder_trigger | do_waitirq) & instr_waitirq ){
+        when(irq_pending =/= 0.U){
+          reg_out := irq_pending
+        }
+      }
+    }
+  } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
+    when(instr_rdcycle){
+      reg_out := count_cycle(31,0)
+    }.elsewhen(instr_rdinstr){
+      reg_out := count_instr(31,0)
+    } .elsewhen(instr_rdinstrh){
+      reg_out := count_instr(63,32)
+    } .elsewhen(instr_rdcycleh){
+      reg_out := count_cycle(63,32)
+    } .elsewhen( instr_getq | instr_setq ){
+      reg_out := cpuregs_rs1
+    } .elsewhen( instr_retirq ){
+      reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
+    } .elsewhen( instr_maskirq ){
+      reg_out := irq_mask
+    } .elsewhen( instr_timer ){
+      reg_out := timer
+    }
+  } .elsewhen( cpu_state_exec  === cpu_state  ){
+    reg_out := reg_pc + decoded_imm    
+  } .elsewhen( cpu_state_stmem === cpu_state ){
+    if (ENABLE_TRACE) {
+      reg_out := reg_op2
+    }
+  } .elsewhen( cpu_state_ldmem === cpu_state ){
+    when(~mem_do_prefetch & mem_done){
+      reg_out := Mux1H(Seq(
+        latched_is_lu -> mem_rdata_word,
+        latched_is_lh -> Cat( Fill(16, mem_rdata_word.extract(15)), mem_rdata_word(15,0) ),
+        latched_is_lb -> Cat( Fill(24, mem_rdata_word.extract(7)) , mem_rdata_word(7,0)  ),
+      ))       
+    }
+  }
+
+  
 
 
 
