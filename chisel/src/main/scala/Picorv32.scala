@@ -434,12 +434,12 @@ extends Module{
   val instr_rdinstr = Reg(Bool())
   val instr_rdinstrh = Reg(Bool())
   val instr_ecall_ebreak = Reg(Bool())
-  val instr_getq = Reg(Bool())
-  val instr_setq = Reg(Bool())
-  val instr_retirq = Reg(Bool())
-  val instr_maskirq = Reg(Bool())
-  val instr_waitirq = Reg(Bool())
-  val instr_timer = Reg(Bool())
+  val instr_getq = Wire(Bool())
+  val instr_setq = Wire(Bool())
+  val instr_retirq = Wire(Bool())
+  val instr_maskirq = Wire(Bool())
+  val instr_waitirq = Wire(Bool())
+  val instr_timer = Wire(Bool())
 
 
 
@@ -538,16 +538,20 @@ extends Module{
   dbg_insn_rd     := Mux( dbg_next, Mux( decoder_pseudo_trigger_q, cached_insn_rd , decoded_rd  ), q_insn_rd  )
 
 
-
-
+  if(ENABLE_IRQ) {
+    instr_retirq  := RegEnable( mem_rdata_latched === BitPat("b0000010??????????????????0001011"), mem_do_rinst & mem_done)
+    instr_waitirq := RegEnable( mem_rdata_latched === BitPat("b0000100??????????????????0001011"), mem_do_rinst & mem_done)
+  } else {
+    instr_retirq  := false.B
+    instr_waitirq := false.B
+  }
 
   when(mem_do_rinst & mem_done){
     instr_lui     := mem_rdata_latched(6,0) === "b0110111".U
     instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
     instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
     instr_jalr    := mem_rdata_latched === BitPat("b?????????????????000?????1100111")
-    instr_retirq  := (if(ENABLE_IRQ) { mem_rdata_latched === BitPat("b0000010??????????????????0001011") } else {false.B})
-    instr_waitirq := (if(ENABLE_IRQ) { mem_rdata_latched === BitPat("b0000100??????????????????0001011") } else {false.B})
+
 
     is_beq_bne_blt_bge_bltu_bgeu := mem_rdata_latched(6,0) === "b1100011".U
     is_lb_lh_lw_lbu_lhu          := mem_rdata_latched(6,0) === "b0000011".U
@@ -578,6 +582,26 @@ extends Module{
     }
 
   }
+
+
+    if( ENABLE_IRQ ){
+      instr_maskirq := RegEnable(mem_rdata_q === BitPat("b0000011??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+    } else {
+      instr_maskirq := false.B
+    }
+
+    if( ENABLE_IRQ & ENABLE_IRQ_QREGS ){
+      instr_getq    := RegEnable(mem_rdata_q === BitPat("b0000000??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+      instr_setq    := RegEnable(mem_rdata_q === BitPat("b0000001??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+      instr_timer   := RegEnable(mem_rdata_q === BitPat("b0000101??????????????????0001011"), decoder_trigger & ~decoder_pseudo_trigger)
+    } else {
+      instr_getq    := false.B
+      instr_setq    := false.B
+      instr_timer   := false.B
+    }
+
+
+
 
   when(decoder_trigger & ~decoder_pseudo_trigger){
 
@@ -642,21 +666,7 @@ extends Module{
     instr_fence := mem_rdata_q === BitPat("b?????????????????000?????0001111")
 
 
-    if( ENABLE_IRQ ){
-      instr_maskirq := mem_rdata_q === BitPat("b0000011??????????????????0001011")
-    } else {
-      instr_maskirq := false.B
-    }
 
-    if( ENABLE_IRQ & ENABLE_IRQ_QREGS ){
-      instr_getq    := mem_rdata_q === BitPat("b0000000??????????????????0001011")
-      instr_setq    := mem_rdata_q === BitPat("b0000001??????????????????0001011")
-      instr_timer   := mem_rdata_q === BitPat("b0000101??????????????????0001011")
-    } else {
-      instr_getq    := false.B
-      instr_setq    := false.B
-      instr_timer   := false.B
-    }
 
 
     is_slli_srli_srai := is_alu_reg_imm & (
@@ -962,12 +972,7 @@ extends Module{
         (irq_pending & LATCHED_IRQ) & (
           Mux( (cpu_state_fetch  === cpu_state & irq_state.extract(1)), irq_mask, "hFFFFFFFF".U(32.W))
         ) |
-          Mux(
-            if (CATCH_ILLINSN){
-                ( cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active)
-            } else {
-              false.B
-            },
+          Mux( cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active,
             1.U << irq_ebreak, 0.U
           )
       )
@@ -1170,36 +1175,36 @@ extends Module{
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       mem_do_rinst := true.B
-    } .elsewhen( if(CATCH_ILLINSN) {instr_trap} else {false.B} ){
+    } .elsewhen( instr_trap ){
       printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
-    } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
+    } .elsewhen( is_rdcycle_rdcycleh_rdinstr_rdinstrh ){
       when(instr_rdcycle){
         reg_out := count_cycle(31,0)
       }.elsewhen(instr_rdinstr){
         reg_out := count_instr(31,0)
       }
-      if(ENABLE_COUNTERS64){
-        when(instr_rdinstrh){
-          reg_out := count_instr(63,32)
-        } .elsewhen(instr_rdcycleh){
-          reg_out := count_cycle(63,32)
-        } 
-      }
+
+      when(instr_rdinstrh){
+        reg_out := count_instr(63,32)
+      } .elsewhen(instr_rdcycleh){
+        reg_out := count_cycle(63,32)
+      } 
+
       latched_store := true.B
-    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_getq} else {false.B}){
+    } .elsewhen( instr_getq ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_store := true.B
-    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_setq} else {false.B}){
+    } .elsewhen( instr_setq ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_rd := latched_rd | irqregs_offset
       latched_store := true.B
-    } .elsewhen( if(ENABLE_IRQ) {instr_retirq} else {false.B} ){
+    } .elsewhen( instr_retirq ){
       eoi := false.B
       irq_active := false.B
       latched_branch := true.B
@@ -1208,14 +1213,14 @@ extends Module{
       reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-    } .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
+    } .elsewhen( instr_maskirq ){
       latched_store := true.B
       reg_out := irq_mask
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       irq_mask := cpuregs_rs1 | MASKED_IRQ
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
+    } .elsewhen( instr_timer ){
       latched_store := true.B
       reg_out := timer
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
@@ -1452,23 +1457,23 @@ extends Module{
       cpu_state := cpu_state_exec
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
       cpu_state := cpu_state_ldmem
-    } .elsewhen( if(CATCH_ILLINSN) {instr_trap} else {false.B} ){
-      when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
+    } .elsewhen( instr_trap ){
+      when( ~irq_mask.extract(irq_ebreak) & ~irq_active ){
         cpu_state := cpu_state_fetch
       } .otherwise{
         cpu_state := cpu_state_trap
       }
-    } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
+    } .elsewhen( is_rdcycle_rdcycleh_rdinstr_rdinstrh ){
       cpu_state := cpu_state_fetch
-    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_getq} else {false.B}){
+    } .elsewhen( instr_getq ){
       cpu_state := cpu_state_fetch
-    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_setq} else {false.B}){
+    } .elsewhen( instr_setq ){
       cpu_state := cpu_state_fetch
-    } .elsewhen( if(ENABLE_IRQ) {instr_retirq} else {false.B} ){
+    } .elsewhen( instr_retirq ){
       cpu_state := cpu_state_fetch
-    } .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
+    } .elsewhen( instr_maskirq ){
       cpu_state := cpu_state_fetch
-    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
+    } .elsewhen( instr_timer ){
       cpu_state := cpu_state_fetch
     } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
       cpu_state := cpu_state_exec
@@ -1525,7 +1530,7 @@ extends Module{
 
 
   if(CATCH_MISALIGN){
-    when(~( if(ENABLE_IRQ) {~irq_mask.extract(irq_buserror) & ~irq_active} else {false.B})){
+    when(~( ~irq_mask.extract(irq_buserror) & ~irq_active)){
       when( (mem_do_rdata | mem_do_wdata)){
         when( (mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U) | (mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U) ){
           cpu_state := cpu_state_trap            
