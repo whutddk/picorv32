@@ -98,7 +98,6 @@ class Picorv32(
   ENABLE_IRQ_QREGS: Boolean = true,
   ENABLE_IRQ_TIMER: Boolean = true,
   ENABLE_TRACE: Boolean = true,
-  REGS_INIT_ZERO: Boolean = false,
   MASKED_IRQ: UInt = "h00000000".U(32.W),
   LATCHED_IRQ: UInt = "hffffffff".U(32.W),
   PROGADDR_RESET: UInt = "h00000000".U(32.W),
@@ -172,8 +171,6 @@ extends Module{
   val reg_op1 = Reg(UInt(32.W))
   val reg_op2 = Reg(UInt(32.W))
   val reg_out = if( STACKADDR != "hffffffff".U(32.W) ) { RegInit(STACKADDR) } else { Reg(UInt(32.W)) }
-  val reg_sh = Reg(UInt(5.W))
-
 
 
   val dbg_mem_valid = mem_valid
@@ -548,9 +545,9 @@ extends Module{
     instr_lui     := mem_rdata_latched(6,0) === "b0110111".U
     instr_auipc   := mem_rdata_latched(6,0) === "b0010111".U
     instr_jal     := mem_rdata_latched(6,0) === "b1101111".U
-    instr_jalr    := mem_rdata_latched(6,0) === "b1100111".U & mem_rdata_latched(14,12) === "b000".U
-    instr_retirq  := (if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U} else {false.B})
-    instr_waitirq := (if(ENABLE_IRQ) {mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000100".U} else {false.B})
+    instr_jalr    := mem_rdata_latched === BitPat("b?????????????????000?????1100111")
+    instr_retirq  := (if(ENABLE_IRQ) { mem_rdata_latched === BitPat("b0000010??????????????????0001011") } else {false.B})
+    instr_waitirq := (if(ENABLE_IRQ) { mem_rdata_latched === BitPat("b0000100??????????????????0001011") } else {false.B})
 
     is_beq_bne_blt_bge_bltu_bgeu := mem_rdata_latched(6,0) === "b1100011".U
     is_lb_lh_lw_lbu_lhu          := mem_rdata_latched(6,0) === "b0000011".U
@@ -569,13 +566,13 @@ extends Module{
     decoded_rs2 := mem_rdata_latched(24,20)
 
     if(ENABLE_IRQ && ENABLE_IRQ_QREGS){
-      when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000000".U ){
+      when( mem_rdata_latched === BitPat("b0000000??????????????????0001011") ){
         decoded_rs1 := Cat( 1.U(1.W), mem_rdata_latched(19,15) ) // instr_getq
       }        
     }
 
     if(ENABLE_IRQ){
-      when(mem_rdata_latched(6,0) === "b0001011".U & mem_rdata_latched(31,25) === "b0000010".U ){
+      when(mem_rdata_latched === BitPat("b0000010??????????????????0001011") ){
         decoded_rs1 := (if(ENABLE_IRQ_QREGS) {irqregs_offset} else {3.U}) // instr_retirq
       }
     }
@@ -608,56 +605,53 @@ extends Module{
     instr_ori   := is_alu_reg_imm & mem_rdata_q(14,12) === "b110".U
     instr_andi  := is_alu_reg_imm & mem_rdata_q(14,12) === "b111".U
 
-    instr_slli  := is_alu_reg_imm & mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_srli  := is_alu_reg_imm & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_srai  := is_alu_reg_imm & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U
-
-    instr_add   := is_alu_reg_reg & mem_rdata_q(14,12) === "b000".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_sub   := is_alu_reg_reg & mem_rdata_q(14,12) === "b000".U & mem_rdata_q(31,25) === "b0100000".U
-    instr_sll   := is_alu_reg_reg & mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_slt   := is_alu_reg_reg & mem_rdata_q(14,12) === "b010".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_sltu  := is_alu_reg_reg & mem_rdata_q(14,12) === "b011".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_xor   := is_alu_reg_reg & mem_rdata_q(14,12) === "b100".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_srl   := is_alu_reg_reg & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_sra   := is_alu_reg_reg & mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U
-    instr_or    := is_alu_reg_reg & mem_rdata_q(14,12) === "b110".U & mem_rdata_q(31,25) === "b0000000".U
-    instr_and   := is_alu_reg_reg & mem_rdata_q(14,12) === "b111".U & mem_rdata_q(31,25) === "b0000000".U
+    instr_slli  := is_alu_reg_imm & mem_rdata_q === BitPat("b0000000??????????001????????????")
+    instr_srli  := is_alu_reg_imm & mem_rdata_q === BitPat("b0000000??????????101????????????")
+    instr_srai  := is_alu_reg_imm & mem_rdata_q === BitPat("b0100000??????????101????????????")
+    instr_add   := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????000????????????")
+    instr_sub   := is_alu_reg_reg & mem_rdata_q === BitPat("b0100000??????????000????????????")
+    instr_sll   := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????001????????????")
+    instr_slt   := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????010????????????")
+    instr_sltu  := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????011????????????")
+    instr_xor   := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????100????????????")
+    instr_srl   := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????101????????????")
+    instr_sra   := is_alu_reg_reg & mem_rdata_q === BitPat("b0100000??????????101????????????")
+    instr_or    := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????110????????????")
+    instr_and   := is_alu_reg_reg & mem_rdata_q === BitPat("b0000000??????????111????????????")
 
     if( ENABLE_COUNTERS ){
-      instr_rdcycle := 
-        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11000000000000000010".U) |
-        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11000000000100000010".U)
-      instr_rdinstr := mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11000000001000000010".U
+      instr_rdcycle := mem_rdata_q === BitPat("b11000000000?00000010?????1110011")
+      instr_rdinstr := mem_rdata_q === BitPat("b11000000001000000010?????1110011")
+
+      if( ENABLE_COUNTERS64 ){
+        instr_rdcycleh := mem_rdata_q === BitPat("b11001000000?00000010?????1110011")
+        instr_rdinstrh := mem_rdata_q === BitPat("b11001000001000000010?????1110011")
+      } else {
+        instr_rdcycleh := false.B
+        instr_rdinstrh := false.B
+      }
     } else {
       instr_rdcycle  := false.B
       instr_rdinstr  := false.B
-    }
-
-    if( ENABLE_COUNTERS & ENABLE_COUNTERS64 ){
-      instr_rdcycleh :=
-        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11001000000000000010".U) |
-        (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11001000000100000010".U)
-      instr_rdinstrh := mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,12) === "b11001000001000000010".U
-    } else {
       instr_rdcycleh := false.B
-      instr_rdinstrh := false.B  
+      instr_rdinstrh := false.B
     }
 
-    instr_ecall_ebreak := 
-      (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,21) === 0.U & mem_rdata_q(19,7) === 0.U)
 
-    instr_fence := mem_rdata_q(6,0) === "b0001111".U & mem_rdata_q(14,12) === 0.U
+    instr_ecall_ebreak := mem_rdata_q === BitPat("b00000000000?00000000000001110011")
+    instr_fence := mem_rdata_q === BitPat("b?????????????????000?????0001111")
+
 
     if( ENABLE_IRQ ){
-      instr_maskirq := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000011".U
+      instr_maskirq := mem_rdata_q === BitPat("b0000011??????????????????0001011")
     } else {
       instr_maskirq := false.B
     }
 
     if( ENABLE_IRQ & ENABLE_IRQ_QREGS ){
-      instr_getq    := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000000".U
-      instr_setq    := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000001".U
-      instr_timer   := mem_rdata_q(6,0) === "b0001011".U & mem_rdata_q(31,25) === "b0000101".U
+      instr_getq    := mem_rdata_q === BitPat("b0000000??????????????????0001011")
+      instr_setq    := mem_rdata_q === BitPat("b0000001??????????????????0001011")
+      instr_timer   := mem_rdata_q === BitPat("b0000101??????????????????0001011")
     } else {
       instr_getq    := false.B
       instr_setq    := false.B
@@ -666,9 +660,9 @@ extends Module{
 
 
     is_slli_srli_srai := is_alu_reg_imm & (
-      ( mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U ) |
-      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U ) |
-      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U )
+      mem_rdata_q === BitPat("b0000000??????????001????????????") |
+      mem_rdata_q === BitPat("b0000000??????????101????????????") |
+      mem_rdata_q === BitPat("b0100000??????????101????????????")
     )
 
 
@@ -684,9 +678,9 @@ extends Module{
     )
 
     is_sll_srl_sra := is_alu_reg_reg & (
-      ( mem_rdata_q(14,12) === "b001".U & mem_rdata_q(31,25) === "b0000000".U ) |
-      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0000000".U ) |
-      ( mem_rdata_q(14,12) === "b101".U & mem_rdata_q(31,25) === "b0100000".U )        
+      mem_rdata_q === BitPat("b0000000??????????001????????????") |
+      mem_rdata_q === BitPat("b0000000??????????101????????????") |
+      mem_rdata_q === BitPat("b0100000??????????101????????????")    
     )
 
     decoded_imm := Mux1H(Seq(
@@ -920,7 +914,6 @@ extends Module{
 
 
 
-  reg_sh := 0.U
   reg_out := 0.U
 
   alu_wait := false.B
