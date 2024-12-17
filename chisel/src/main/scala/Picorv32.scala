@@ -107,7 +107,6 @@ class Picorv32(
   TWO_CYCLE_ALU: Boolean = true,
   CATCH_MISALIGN: Boolean = true,
   CATCH_ILLINSN: Boolean = true,
-  ENABLE_DIV: Boolean = true,
   ENABLE_IRQ: Boolean = true,
   ENABLE_IRQ_QREGS: Boolean = true,
   ENABLE_IRQ_TIMER: Boolean = true,
@@ -172,7 +171,7 @@ extends Module{
 
 
 
-  def WITH_PCPI = ENABLE_DIV
+  def WITH_PCPI = false
 
   def TRACE_BRANCH = Cat( "b0001".U(4.W), 0.U(32.W) )
   def TRACE_ADDR   = Cat( "b0010".U(4.W), 0.U(32.W) )
@@ -238,21 +237,7 @@ extends Module{
   }
 
 
-
-
-  if (ENABLE_DIV) {
-    val pcpi_div = Module(new Pcpi_div)
-
-    pcpi_div.io.valid := pcpi_valid
-    pcpi_div.io.insn  := pcpi_insn
-    pcpi_div.io.rs1   := io.pcpi.rs1
-    pcpi_div.io.rs2   := io.pcpi.rs2
-    pcpi_div_wr     := pcpi_div.io.wr
-    pcpi_div_rd     := pcpi_div.io.rd
-    pcpi_div_waiting   := pcpi_div.io.waiting
-    pcpi_div_ready  := pcpi_div.io.ready
-  
-  } else {
+  {
     pcpi_div_wr    := false.B
     pcpi_div_rd    := 0.U
     pcpi_div_waiting  := false.B
@@ -260,20 +245,15 @@ extends Module{
   }
 
 
-  val pcpi_int_wr =
-    (if(ENABLE_DIV)                   { pcpi_div_ready & pcpi_div_wr } else {false.B}) |
-    false.B
+  val pcpi_int_wr = false.B
 
   val pcpi_int_rd =
-    Mux1H(Seq( false.B -> 0.U ) ++ 
-      (if(ENABLE_DIV) {Seq(pcpi_div_ready -> pcpi_div_rd)} else {Seq()})
+    Mux1H(Seq( false.B -> 0.U )
     )
 
-  val pcpi_int_waiting  = false.B |
-    (if(ENABLE_DIV) {pcpi_div_waiting } else {false.B})
+  val pcpi_int_waiting  = false.B
 
-  val pcpi_int_ready = false.B |
-    (if(ENABLE_DIV) {pcpi_div_ready} else {false.B})
+  val pcpi_int_ready = false.B
 
 
 
