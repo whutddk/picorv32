@@ -88,7 +88,6 @@ class Picorv32(
   ENABLE_COUNTERS: Boolean = true,
   ENABLE_COUNTERS64: Boolean = true,
   ENABLE_REGS_16_31: Boolean = true,
-  ENABLE_REGS_DUALPORT: Boolean = true,
   LATCHED_MEM_RDATA: Boolean = false,
   TWO_CYCLE_COMPARE: Boolean = true,
   TWO_CYCLE_ALU: Boolean = true,
@@ -446,7 +445,6 @@ extends Module{
   val decoded_rd  = Reg(UInt(regindex_bits.W))
   val decoded_rs1 = Reg(UInt(regindex_bits.W))
   val decoded_rs2 = Reg(UInt(5.W))
-  val decoded_rs  = Wire(UInt(regindex_bits.W))
 
   val decoded_imm = Reg(UInt(32.W))
   val decoded_imm_j = Reg(UInt(32.W))
@@ -749,7 +747,7 @@ extends Module{
   val cpu_state_trap   = "b10000000".U(8.W)
   val cpu_state_fetch  = "b01000000".U(8.W)
   val cpu_state_ld_rs1 = "b00100000".U(8.W)
-  val cpu_state_ld_rs2 = "b00010000".U(8.W)
+  // val cpu_state_ld_rs2 = "b00010000".U(8.W) //will only arrive when ENABLE_REGS_DUALPORT
   val cpu_state_exec   = "b00001000".U(8.W)
   // val cpu_state_shift  = "b00000100".U(8.W)
   val cpu_state_stmem  = "b00000010".U(8.W)
@@ -863,8 +861,8 @@ extends Module{
 
 
 
-  val cpuregs_raddr1 = if(ENABLE_REGS_DUALPORT) {decoded_rs1} else { decoded_rs }
-  val cpuregs_raddr2 = if(ENABLE_REGS_DUALPORT) {decoded_rs2} else { 0.U(6.W) }
+  val cpuregs_raddr1 = decoded_rs1
+  val cpuregs_raddr2 = decoded_rs2
 
   val cpuregs = Mem(regfile_size, UInt(32.W))
 
@@ -876,19 +874,8 @@ extends Module{
   val cpuregs_rdata2 = cpuregs(cpuregs_raddr2)
 
 
-  val cpuregs_rs1 = Wire(UInt(32.W))
-  val cpuregs_rs2 = Wire(UInt(32.W))
-
-
-  if (ENABLE_REGS_DUALPORT) {
-    cpuregs_rs1 := Mux(decoded_rs1 =/= 0.U, cpuregs_rdata1, 0.U)
-    cpuregs_rs2 := Mux(decoded_rs2 =/= 0.U, cpuregs_rdata2, 0.U)
-    decoded_rs  := DontCare
-  } else {
-    decoded_rs  := Mux(cpu_state === cpu_state_ld_rs2, decoded_rs2, decoded_rs1)
-    cpuregs_rs1 := Mux(decoded_rs =/= 0.U, cpuregs_rdata1, 0.U)
-    cpuregs_rs2 := cpuregs_rs1
-  }
+  val cpuregs_rs1 = Mux(decoded_rs1 =/= 0.U, cpuregs_rdata1, 0.U)
+  val cpuregs_rs2 = Mux(decoded_rs2 =/= 0.U, cpuregs_rdata2, 0.U)
 
   launch_next_insn := (
     if( !ENABLE_IRQ ){
@@ -935,34 +922,6 @@ extends Module{
     dbg_rs1val_valid := false.B
     dbg_rs2val_valid := false.B
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
   if( ENABLE_IRQ ){
@@ -1243,41 +1202,23 @@ extends Module{
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      if (ENABLE_REGS_DUALPORT){
-        // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
-        reg_op2 := cpuregs_rs2
-        dbg_rs2val := cpuregs_rs2
-        dbg_rs2val_valid := true.B
 
-        when(is_sb_sh_sw){
-          mem_do_rinst := true.B
+      // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
+      reg_op2 := cpuregs_rs2
+      dbg_rs2val := cpuregs_rs2
+      dbg_rs2val_valid := true.B
+
+      when(is_sb_sh_sw){
+        mem_do_rinst := true.B
+      } .otherwise{
+        when( if(TWO_CYCLE_ALU) {true.B} else {if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}}) {
+          alu_wait_2 := (if( TWO_CYCLE_ALU & TWO_CYCLE_COMPARE ) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
+          alu_wait := true.B
         } .otherwise{
-          when( if(TWO_CYCLE_ALU) {true.B} else {if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}}) {
-            alu_wait_2 := (if( TWO_CYCLE_ALU & TWO_CYCLE_COMPARE ) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
-            alu_wait := true.B
-          } .otherwise{
-            mem_do_rinst := mem_do_prefetch
-          }
+          mem_do_rinst := mem_do_prefetch
         }
       }
-    }
 
-
-  } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
-    // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
-    reg_op2 := cpuregs_rs2
-    dbg_rs2val := cpuregs_rs2
-    dbg_rs2val_valid := true.B
-
-    when(is_sb_sh_sw){
-      mem_do_rinst := true.B
-    } .otherwise{
-      when( if (TWO_CYCLE_ALU) {true.B} else { if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B} } ){
-        alu_wait_2 := (if(TWO_CYCLE_ALU & TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
-        alu_wait := true.B
-      } .otherwise{
-        mem_do_rinst := mem_do_prefetch
-      }
     }
 
 
@@ -1443,9 +1384,7 @@ extends Module{
     }
 
   } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
-    when(is_lui_auipc_jal | is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi){
-      cpu_state := cpu_state_exec
-    } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
+    when(is_lb_lh_lw_lbu_lhu & ~instr_trap){
       cpu_state := cpu_state_ldmem
     } .elsewhen( instr_trap ){
       when( ~irq_mask.extract(irq_ebreak) & ~irq_active ){
@@ -1455,20 +1394,7 @@ extends Module{
       }
     } .elsewhen( is_rdcycle_rdcycleh_rdinstr_rdinstrh | instr_getq | instr_setq | instr_retirq | instr_maskirq | instr_timer ){
       cpu_state := cpu_state_fetch
-    } .otherwise{
-      if (ENABLE_REGS_DUALPORT){
-        when(is_sb_sh_sw){
-          cpu_state := cpu_state_stmem
-        } .otherwise{
-          cpu_state := cpu_state_exec
-        }
-      } else {
-        cpu_state := cpu_state_ld_rs2
-      }
-    }
-
-  } .elsewhen( cpu_state_ld_rs2 === cpu_state ){ // only ENABLE_REGS_DUALPORT will entry this state
-    when(is_sb_sh_sw){
+    } .elsewhen(is_sb_sh_sw){
       cpu_state := cpu_state_stmem
     } .otherwise{
       cpu_state := cpu_state_exec
