@@ -12,7 +12,7 @@ IVERILOG = iverilog$(ICARUS_SUFFIX)
 VVP = vvp$(ICARUS_SUFFIX)
 
 TEST_OBJS = $(addsuffix .o,$(basename $(wildcard tests/*.S)))
-FIRMWARE_OBJS = firmware/start.o firmware/irq.o firmware/print.o firmware/hello.o firmware/sieve.o firmware/multest.o firmware/stats.o
+FIRMWARE_OBJS = firmware/start.o firmware/irq.o firmware/print.o firmware/hello.o firmware/sieve.o firmware/stats.o
 GCC_WARNS  = -Werror -Wall -Wextra -Wshadow -Wundef -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings
 GCC_WARNS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes -pedantic # -Wconversion
 TOOLCHAIN_PREFIX = riscv64-unknown-elf-
@@ -105,20 +105,20 @@ firmware/firmware.bin: firmware/firmware.elf
 	chmod -x $@
 
 firmware/firmware.elf: $(FIRMWARE_OBJS) $(TEST_OBJS) firmware/sections.lds
-	$(TOOLCHAIN_PREFIX)gcc -Os -mabi=ilp32 -march=rv32im -ffreestanding -nostdlib -o $@ \
+	$(TOOLCHAIN_PREFIX)gcc -Os -mabi=ilp32 -march=rv32i -ffreestanding -nostdlib -o $@ \
 		-Wl,--build-id=none,-Bstatic,-T,firmware/sections.lds,-Map,firmware/firmware.map,--strip-debug \
 		$(FIRMWARE_OBJS) $(TEST_OBJS) -lgcc
 	riscv64-unknown-elf-objdump --disassemble-all --disassemble-zeroes  firmware/firmware.elf > firmware/firmware.dump
 	chmod -x $@
 
 firmware/start.o: firmware/start.S
-	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32im -o $@ $<
+	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32i -o $@ $<
 
 firmware/%.o: firmware/%.c
 	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32i -Os --std=c99 $(GCC_WARNS) -ffreestanding -nostdlib -o $@ $<
 
 tests/%.o: tests/%.S tests/riscv_test.h tests/test_macros.h
-	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32im -o $@ -DTEST_FUNC_NAME=$(notdir $(basename $<)) \
+	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32i -o $@ -DTEST_FUNC_NAME=$(notdir $(basename $<)) \
 		-DTEST_FUNC_TXT='"$(notdir $(basename $<))"' -DTEST_FUNC_RET=$(notdir $(basename $<))_ret $<
 
 download-tools:

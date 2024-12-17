@@ -9,7 +9,7 @@
 #define ENABLE_HELLO
 #define ENABLE_RVTST
 #define ENABLE_SIEVE
-#define ENABLE_MULTST
+//#define ENABLE_MULTST
 #define ENABLE_STATS
 
 #ifndef ENABLE_QREGS
@@ -27,15 +27,15 @@
 	.global irq
 	.global hello
 	.global sieve
-	.global multest
-	.global hard_mul
-	.global hard_mulh
-	.global hard_mulhsu
-	.global hard_mulhu
-	.global hard_div
-	.global hard_divu
-	.global hard_rem
-	.global hard_remu
+	//.global multest
+	//.global hard_mul
+	//.global hard_mulh
+	//.global hard_mulhsu
+	//.global hard_mulhu
+	//.global hard_div
+	//.global hard_divu
+	//.global hard_rem
+	//.global hard_remu
 	.global stats
 
 reset_vec:
@@ -442,15 +442,15 @@ start:
 	TEST(or)
 	TEST(and)
 
-	TEST(mulh)
-	TEST(mulhsu)
-	TEST(mulhu)
-	TEST(mul)
+//	TEST(mulh)
+//	TEST(mulhsu)
+//	TEST(mulhu)
+//	TEST(mul)
 
-	TEST(div)
-	TEST(divu)
-	TEST(rem)
-	TEST(remu)
+//	TEST(div)
+//	TEST(divu)
+//	TEST(rem)
+//	TEST(remu)
 
 	TEST(simple)
 
@@ -469,7 +469,7 @@ start:
 
 #ifdef ENABLE_MULTST
 	/* call multest C code */
-	jal ra,multest
+	// jal ra,multest
 #endif
 
 #ifdef ENABLE_STATS
@@ -501,6 +501,7 @@ start:
 /* Hard mul functions for multest.c
  **********************************/
 
+/*
 hard_mul:
 	mul a0, a0, a1
 	ret
@@ -532,4 +533,4 @@ hard_rem:
 hard_remu:
 	remu a0, a0, a1
 	ret
-
+*/
