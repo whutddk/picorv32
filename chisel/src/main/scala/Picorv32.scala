@@ -91,7 +91,6 @@ class Picorv32(
   LATCHED_MEM_RDATA: Boolean = false,
   TWO_CYCLE_COMPARE: Boolean = true,
   TWO_CYCLE_ALU: Boolean = true,
-  CATCH_MISALIGN: Boolean = true,
   CATCH_ILLINSN: Boolean = true,
   ENABLE_IRQ: Boolean = true,
   ENABLE_IRQ_QREGS: Boolean = true,
@@ -105,6 +104,7 @@ class Picorv32(
 )
 extends Module{
   def RISCV_FORMAL = true
+  println("Warning! Mis-align in instr-fetch or memory-access will only throw assert failure in Simulation, and may cause error in physical system!\n")
 
 
   class Picorv32IO extends Bundle{
@@ -931,28 +931,10 @@ extends Module{
           )
       )
 
-    val busError_irq_pending = Wire( UInt(32.W) )
-
-    if (CATCH_MISALIGN){
-      when( ( ~irq_mask.extract(irq_buserror) & ~irq_active ) & (
-        (( mem_do_rdata | mem_do_wdata ) & ( ( mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U ) | ( mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U ) )) |
-        (  mem_do_rinst                  & ( reg_pc(1,0) =/= 0.U )                                      )
-      ) ){
-        busError_irq_pending := (1.U << irq_buserror)
-      } .otherwise{
-        busError_irq_pending := 0.U
-      }  
-    } else{
-      busError_irq_pending := 0.U
-    }
-
-
-
 
     val irq_pending_dnxt = 
       next_irq_pending | io.irq |
-      Mux( (if( ENABLE_IRQ_TIMER ){timer === 1.U} else {false.B}), (1.U << irq_timer), 0.U ) |
-      busError_irq_pending
+      Mux( (if( ENABLE_IRQ_TIMER ){timer === 1.U} else {false.B}), (1.U << irq_timer), 0.U )
 
     when(true.B){
       irq_pending := irq_pending_dnxt & ~MASKED_IRQ
@@ -1033,8 +1015,8 @@ extends Module{
     }
 
 
-    reg_pc := current_pc
-    reg_next_pc := current_pc
+    reg_pc := current_pc & "hFFFFFFFC".U
+    reg_next_pc := current_pc & "hFFFFFFFC".U
 
     latched_store  := false.B
     latched_stalu  := false.B
@@ -1060,7 +1042,7 @@ extends Module{
       } .elsewhen( (decoder_trigger | do_waitirq) & instr_waitirq ){
         when(irq_pending =/= 0.U){
           latched_store := true.B
-          reg_next_pc := current_pc + 4.U
+          reg_next_pc := (current_pc + 4.U) & "hFFFFFFFC".U
           mem_do_rinst := true.B
         } .otherwise{
           do_waitirq := true.B
@@ -1068,7 +1050,7 @@ extends Module{
       } .elsewhen(decoder_trigger){
         // printf(s"-- %-0t", $time)
         irq_delay := irq_active
-        reg_next_pc := current_pc + 4.U
+        reg_next_pc := (current_pc + 4.U) & "hFFFFFFFC".U
         if (ENABLE_TRACE){
           latched_trace := true.B
         }
@@ -1077,7 +1059,7 @@ extends Module{
         }
         when(instr_jal){
           mem_do_rinst := true.B
-          reg_next_pc := current_pc + decoded_imm_j
+          reg_next_pc := (current_pc + decoded_imm_j) & "hFFFFFFFC".U
           latched_branch := true.B
         } .otherwise{
           mem_do_rinst := false.B
@@ -1088,7 +1070,7 @@ extends Module{
       when(decoder_trigger){
         // printf(s"-- %-0t", $time)
         irq_delay := irq_active
-        reg_next_pc := current_pc + 4.U
+        reg_next_pc := (current_pc + 4.U) & "hFFFFFFFC".U
         if (ENABLE_TRACE){
           latched_trace := true.B
         }
@@ -1097,7 +1079,7 @@ extends Module{
         }
         when(instr_jal){
           mem_do_rinst := true.B
-          reg_next_pc := current_pc + decoded_imm_j
+          reg_next_pc := (current_pc + decoded_imm_j) & "hFFFFFFFC".U
           latched_branch := true.B
         } .otherwise{
           mem_do_rinst := false.B
@@ -1264,19 +1246,22 @@ extends Module{
 
 
 
-  if (CATCH_MISALIGN){
-    when( (mem_do_rdata | mem_do_wdata)){
-      when(mem_wordsize === 0.U & reg_op1(1,0)         =/= 0.U){
-        printf( "MISALIGNED WORD: 0x%x\n", reg_op1)       
-      }
-      when (mem_wordsize === 1.U && reg_op1.extract(0)  =/= 0.U){
-        printf( "MISALIGNED HALFWORD: 0x%x\n", reg_op1)
-      }
+
+  when( (mem_do_rdata | mem_do_wdata)){
+    when(mem_wordsize === 0.U & reg_op1(1,0)         =/= 0.U){
+      printf( "MISALIGNED WORD: 0x%x\n", reg_op1)
+      assert(false.B)
     }
-    when( mem_do_rinst & ( reg_pc(1,0) =/= 0.U )){
-      printf( "MISALIGNED INSTRUCTION: 0x%x\n", reg_pc)
+    when (mem_wordsize === 1.U && reg_op1.extract(0)  =/= 0.U){
+      printf( "MISALIGNED HALFWORD: 0x%x\n", reg_op1)
+      assert(false.B)
     }
   }
+  when( mem_do_rinst & ( reg_pc(1,0) =/= 0.U )){
+    printf( "MISALIGNED INSTRUCTION: 0x%x\n", reg_pc)
+    assert(false.B)
+  }
+
 
 
 
@@ -1368,10 +1353,8 @@ extends Module{
       reg_out := count_instr(63,32)
     } .elsewhen(instr_rdcycleh){
       reg_out := count_cycle(63,32)
-    } .elsewhen( instr_getq | instr_setq ){
+    } .elsewhen( instr_getq | instr_setq | instr_retirq ){
       reg_out := cpuregs_rs1
-    } .elsewhen( instr_retirq ){
-      reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
     } .elsewhen( instr_maskirq ){
       reg_out := irq_mask
     } .elsewhen( instr_timer ){
@@ -1479,22 +1462,15 @@ extends Module{
     }
   }
 
-  if(CATCH_MISALIGN){
-    when(~( ~irq_mask.extract(irq_buserror) & ~irq_active)){
-      when( (mem_do_rdata | mem_do_wdata)){
-        when( (mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U) | (mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U) ){
-          cpu_state := cpu_state_trap            
-        }
-      }
-      when( mem_do_rinst & ( reg_pc(1,0) =/= 0.U ) ){
-        cpu_state := cpu_state_trap
-      }        
-    }
-  } else{
+
+  if(!CATCH_ILLINSN){
     when( decoder_trigger_q & ~decoder_pseudo_trigger_q & instr_ecall_ebreak){
+      printf( "EBREAK INSN AT 0x%x\n", reg_pc)
       cpu_state := cpu_state_trap
-    }    
+    }        
   }
+
+
 
 
 
@@ -1550,10 +1526,6 @@ extends Module{
 
 
 
-  if (!CATCH_MISALIGN){
-    reg_pc(1,0) := 0.U
-    reg_next_pc(1,0) := 0.U
-  }
 
 
 
