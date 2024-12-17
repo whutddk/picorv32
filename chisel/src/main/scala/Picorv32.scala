@@ -103,8 +103,6 @@ class Picorv32(
   ENABLE_REGS_16_31: Boolean = true,
   ENABLE_REGS_DUALPORT: Boolean = true,
   LATCHED_MEM_RDATA: Boolean = false,
-  TWO_STAGE_SHIFT: Boolean = true,
-  BARREL_SHIFTER: Boolean = false,
   TWO_CYCLE_COMPARE: Boolean = true,
   TWO_CYCLE_ALU: Boolean = true,
   CATCH_MISALIGN: Boolean = true,
@@ -860,7 +858,7 @@ extends Module{
   val cpu_state_ld_rs1 = "b00100000".U(8.W)
   val cpu_state_ld_rs2 = "b00010000".U(8.W)
   val cpu_state_exec   = "b00001000".U(8.W)
-  val cpu_state_shift  = "b00000100".U(8.W)
+  // val cpu_state_shift  = "b00000100".U(8.W)
   val cpu_state_stmem  = "b00000010".U(8.W)
   val cpu_state_ldmem  = "b00000001".U(8.W)
 
@@ -939,10 +937,9 @@ extends Module{
       ( instr_xori | instr_xor ) -> ( reg_op1 ^ reg_op2 ),
       ( instr_ori  | instr_or  ) -> ( reg_op1 | reg_op2 ),
       ( instr_andi | instr_and ) -> ( reg_op1 & reg_op2 ),
-    ) ++ (if( BARREL_SHIFTER ){ Seq(
-      (instr_sll | instr_slli) -> alu_shl,
+      (instr_sll | instr_slli)   -> alu_shl,
       (instr_srl | instr_srli | instr_sra | instr_srai) -> alu_shr,      
-      )} else { Seq() })
+    )
   )
   dontTouch(alu_out)
   val alu_out_q = RegNext(alu_out)
@@ -1412,19 +1409,12 @@ extends Module{
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_fetch
-    } .elsewhen( if( !BARREL_SHIFTER ){is_slli_srli_srai} else {false.B} ){
+    } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      reg_sh := decoded_rs2
-      cpu_state := cpu_state_shift
-    } .elsewhen( (if( BARREL_SHIFTER ){ is_slli_srli_srai} else {false.B}) | is_jalr_addi_slti_sltiu_xori_ori_andi ){
-      // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-      reg_op1 := cpuregs_rs1
-      dbg_rs1val := cpuregs_rs1
-      dbg_rs1val_valid := true.B
-      reg_op2 := (if( BARREL_SHIFTER ){ Mux(is_slli_srli_srai, decoded_rs2, decoded_imm) } else { decoded_imm })
+      reg_op2 := Mux(is_slli_srli_srai, decoded_rs2, decoded_imm)
       if (TWO_CYCLE_ALU){
         alu_wait := true.B
       } else {
@@ -1446,8 +1436,6 @@ extends Module{
         when(is_sb_sh_sw){
           cpu_state := cpu_state_stmem
           mem_do_rinst := true.B
-        } .elsewhen( if(!BARREL_SHIFTER) {is_sll_srl_sra} else {false.B} ){
-          cpu_state := cpu_state_shift
         } .otherwise{
           when( if(TWO_CYCLE_ALU) {true.B} else {if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}}) {
             alu_wait_2 := (if( TWO_CYCLE_ALU & TWO_CYCLE_COMPARE ) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
@@ -1490,8 +1478,6 @@ extends Module{
     } .elsewhen(is_sb_sh_sw){
       cpu_state := cpu_state_stmem
       mem_do_rinst := true.B
-    } .elsewhen( if( !BARREL_SHIFTER ) {is_sll_srl_sra} else {false.B} ){
-      cpu_state := cpu_state_shift
     } .otherwise{
       when( if (TWO_CYCLE_ALU) {true.B} else { if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B} } ){
         alu_wait_2 := (if(TWO_CYCLE_ALU & TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B})
@@ -1526,27 +1512,6 @@ extends Module{
       cpu_state := cpu_state_fetch;        
     }
     
-  } .elsewhen( cpu_state_shift === cpu_state ){
-    latched_store := true.B
-    when(reg_sh === 0.U){
-      reg_out := reg_op1
-      mem_do_rinst := mem_do_prefetch
-      cpu_state := cpu_state_fetch
-    } .elsewhen( if(TWO_STAGE_SHIFT) {reg_sh >= 4.U} else {false.B} ){
-      reg_op1 := Mux1H(Seq(
-        ( instr_slli | instr_sll ) -> (reg_op1 << 4),
-        ( instr_srli | instr_srl ) -> (reg_op1 >> 4),
-        ( instr_srai | instr_sra ) -> (Cat( Fill(4, reg_op1.extract(31)), reg_op1 ) >> 4),
-      ))
-      reg_sh := reg_sh - 4.U
-    } .otherwise{
-      reg_op1 := Mux1H(Seq(
-        ( instr_slli | instr_sll ) -> (reg_op1 << 1),
-        ( instr_srli | instr_srl ) -> (reg_op1 >> 1),
-        ( instr_srai | instr_sra ) -> (Cat( Fill(1, reg_op1.extract(31)), reg_op1 ) >> 1),
-      ))
-      reg_sh := reg_sh - 1.U
-    }    
   } .elsewhen( cpu_state_stmem === cpu_state ){
     if (ENABLE_TRACE) {
       reg_out := reg_op2
