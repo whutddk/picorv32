@@ -1124,7 +1124,6 @@ extends Module{
         } .otherwise{
           mem_do_rinst := false.B
           mem_do_prefetch := ~instr_jalr & ~instr_retirq;
-          cpu_state := cpu_state_ld_rs1
         }
       }
     } else {
@@ -1145,7 +1144,6 @@ extends Module{
         } .otherwise{
           mem_do_rinst := false.B
           mem_do_prefetch := ~instr_jalr & ~instr_retirq;
-          cpu_state := cpu_state_ld_rs1
         }
       }
     }
@@ -1166,21 +1164,14 @@ extends Module{
       } else {
         mem_do_rinst := mem_do_prefetch
       }
-      cpu_state := cpu_state_exec;          
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      cpu_state := cpu_state_ldmem
       mem_do_rinst := true.B
     } .elsewhen( if(CATCH_ILLINSN) {instr_trap} else {false.B} ){
       printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
-      when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
-        cpu_state := cpu_state_fetch
-      } .otherwise{
-        cpu_state := cpu_state_trap
-      }
     } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
       when(instr_rdcycle){
         reg_out := count_cycle(31,0)
@@ -1195,14 +1186,12 @@ extends Module{
         } 
       }
       latched_store := true.B
-      cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_getq} else {false.B}){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
       latched_store := true.B
-      cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_setq} else {false.B}){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_out := cpuregs_rs1
@@ -1210,7 +1199,6 @@ extends Module{
       dbg_rs1val_valid := true.B
       latched_rd := latched_rd | irqregs_offset
       latched_store := true.B
-      cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ) {instr_retirq} else {false.B} ){
       eoi := false.B
       irq_active := false.B
@@ -1220,7 +1208,6 @@ extends Module{
       reg_out := (if(CATCH_MISALIGN) {(cpuregs_rs1 & "hfffffffe".U)} else {cpuregs_rs1})
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
       latched_store := true.B
       reg_out := irq_mask
@@ -1228,7 +1215,6 @@ extends Module{
       irq_mask := cpuregs_rs1 | MASKED_IRQ
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      cpu_state := cpu_state_fetch
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
       latched_store := true.B
       reg_out := timer;
@@ -1236,7 +1222,6 @@ extends Module{
       timer := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
       dbg_rs1val_valid := true.B
-      cpu_state := cpu_state_fetch
     } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
@@ -1248,7 +1233,6 @@ extends Module{
       } else {
         mem_do_rinst := mem_do_prefetch
       }
-      cpu_state := cpu_state_exec
     } .otherwise{
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       reg_op1 := cpuregs_rs1
@@ -1256,13 +1240,11 @@ extends Module{
       dbg_rs1val_valid := true.B
       if (ENABLE_REGS_DUALPORT){
         // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
-        reg_sh := cpuregs_rs2
         reg_op2 := cpuregs_rs2
         dbg_rs2val := cpuregs_rs2
         dbg_rs2val_valid := true.B
 
         when(is_sb_sh_sw){
-          cpu_state := cpu_state_stmem
           mem_do_rinst := true.B
         } .otherwise{
           when( if(TWO_CYCLE_ALU) {true.B} else {if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B}}) {
@@ -1271,23 +1253,18 @@ extends Module{
           } .otherwise{
             mem_do_rinst := mem_do_prefetch
           }
-          cpu_state := cpu_state_exec
         }
-      } else {
-        cpu_state := cpu_state_ld_rs2
       }
     }
 
 
   } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
     // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
-    reg_sh  := cpuregs_rs2
     reg_op2 := cpuregs_rs2
     dbg_rs2val := cpuregs_rs2
     dbg_rs2val_valid := true.B
 
     when(is_sb_sh_sw){
-      cpu_state := cpu_state_stmem
       mem_do_rinst := true.B
     } .otherwise{
       when( if (TWO_CYCLE_ALU) {true.B} else { if(TWO_CYCLE_COMPARE) {is_beq_bne_blt_bge_bltu_bgeu} else {false.B} } ){
@@ -1296,7 +1273,6 @@ extends Module{
       } .otherwise{
         mem_do_rinst := mem_do_prefetch
       }
-      cpu_state := cpu_state_exec
     }
 
 
@@ -1309,10 +1285,6 @@ extends Module{
       latched_rd := 0.U
       latched_store  := (if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0})
       latched_branch := (if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0})
-      when(mem_done){
-        cpu_state := cpu_state_fetch;          
-      }
-
       when( if(TWO_CYCLE_COMPARE) {alu_out_0_q} else {alu_out_0}){
         decoder_trigger := false.B
       }      
@@ -1320,7 +1292,6 @@ extends Module{
       latched_branch := instr_jalr
       latched_store := true.B
       latched_stalu := true.B
-      cpu_state := cpu_state_fetch;        
     }
     
   } .elsewhen( cpu_state_stmem === cpu_state ){
@@ -1346,7 +1317,6 @@ extends Module{
       }
 
       when(~mem_do_prefetch & mem_done){
-        cpu_state := cpu_state_fetch
         decoder_trigger := true.B
         decoder_pseudo_trigger := true.B
       }
@@ -1383,8 +1353,7 @@ extends Module{
         ))
 
         decoder_trigger := true.B
-        decoder_pseudo_trigger := true.B
-        cpu_state := cpu_state_fetch;          
+        decoder_pseudo_trigger := true.B        
       }
     
     }
@@ -1410,6 +1379,151 @@ extends Module{
     }
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  when( cpu_state_fetch === cpu_state ){
+    if (ENABLE_IRQ){
+      when((decoder_trigger & ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state =/= 0.U ){
+
+      } .elsewhen( (decoder_trigger | do_waitirq) & instr_waitirq ){
+
+      } .elsewhen(decoder_trigger){
+        when(instr_jal){
+        } .otherwise{
+          cpu_state := cpu_state_ld_rs1
+        }
+      }
+    } else {
+      when(decoder_trigger){
+        when(instr_jal){
+        } .otherwise{
+          cpu_state := cpu_state_ld_rs1
+        }
+      }
+    }
+
+  } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
+    when(is_lui_auipc_jal){
+      cpu_state := cpu_state_exec;          
+    } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
+      cpu_state := cpu_state_ldmem
+    } .elsewhen( if(CATCH_ILLINSN) {instr_trap} else {false.B} ){
+      when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
+        cpu_state := cpu_state_fetch
+      } .otherwise{
+        cpu_state := cpu_state_trap
+      }
+    } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
+      cpu_state := cpu_state_fetch
+    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_getq} else {false.B}){
+      cpu_state := cpu_state_fetch
+    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_QREGS) {instr_setq} else {false.B}){
+      cpu_state := cpu_state_fetch
+    } .elsewhen( if(ENABLE_IRQ) {instr_retirq} else {false.B} ){
+      cpu_state := cpu_state_fetch
+    } .elsewhen( if(ENABLE_IRQ) {instr_maskirq} else {false.B}){
+      cpu_state := cpu_state_fetch
+    } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
+      cpu_state := cpu_state_fetch
+    } .elsewhen( is_slli_srli_srai | is_jalr_addi_slti_sltiu_xori_ori_andi ){
+      cpu_state := cpu_state_exec
+    } .otherwise{
+      if (ENABLE_REGS_DUALPORT){
+        when(is_sb_sh_sw){
+          cpu_state := cpu_state_stmem
+        } .otherwise{
+          cpu_state := cpu_state_exec
+        }
+      } else {
+        cpu_state := cpu_state_ld_rs2
+      }
+    }
+
+
+  } .elsewhen( cpu_state_ld_rs2 === cpu_state ){
+    when(is_sb_sh_sw){
+      cpu_state := cpu_state_stmem
+    } .otherwise{
+      cpu_state := cpu_state_exec
+    }
+
+
+  } .elsewhen( cpu_state_exec  === cpu_state  ){
+    when( if (TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) {(alu_wait | alu_wait_2)} else { false.B }){
+    } .elsewhen(is_beq_bne_blt_bge_bltu_bgeu){
+      when(mem_done){
+        cpu_state := cpu_state_fetch;          
+      }
+    } .otherwise{
+      cpu_state := cpu_state_fetch;        
+    }
+    
+  } .elsewhen( cpu_state_stmem === cpu_state ){
+
+    when(~mem_do_prefetch | mem_done){
+      when(~mem_do_prefetch & mem_done){
+        cpu_state := cpu_state_fetch
+      }
+    }
+
+  } .elsewhen( cpu_state_ldmem === cpu_state ){
+    when(~mem_do_prefetch | mem_done){
+      when(~mem_do_prefetch & mem_done){
+        cpu_state := cpu_state_fetch;          
+      }
+    }
+  
+  }
+
+
+
+
+
   if(CATCH_MISALIGN){
     when(~( if(ENABLE_IRQ) {~irq_mask.extract(irq_buserror) & ~irq_active} else {false.B})){
       when( (mem_do_rdata | mem_do_wdata)){
@@ -1426,6 +1540,34 @@ extends Module{
       cpu_state := cpu_state_trap
     }    
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
