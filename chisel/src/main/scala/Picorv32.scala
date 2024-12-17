@@ -745,7 +745,7 @@ extends Module{
   val cpu_state_stmem  = "b00000010".U(8.W)
   val cpu_state_ldmem  = "b00000001".U(8.W)
 
-  val cpu_state = RegInit(cpu_state_fetch);
+  val cpu_state = RegInit(cpu_state_fetch)
   val irq_state = RegInit(0.U(2.W))
 
 
@@ -1119,11 +1119,11 @@ extends Module{
         }
         when(instr_jal){
           mem_do_rinst := true.B
-          reg_next_pc := current_pc + decoded_imm_j;
+          reg_next_pc := current_pc + decoded_imm_j
           latched_branch := true.B
         } .otherwise{
           mem_do_rinst := false.B
-          mem_do_prefetch := ~instr_jalr & ~instr_retirq;
+          mem_do_prefetch := ~instr_jalr & ~instr_retirq
         }
       }
     } else {
@@ -1139,11 +1139,11 @@ extends Module{
         }
         when(instr_jal){
           mem_do_rinst := true.B
-          reg_next_pc := current_pc + decoded_imm_j;
+          reg_next_pc := current_pc + decoded_imm_j
           latched_branch := true.B
         } .otherwise{
           mem_do_rinst := false.B
-          mem_do_prefetch := ~instr_jalr & ~instr_retirq;
+          mem_do_prefetch := ~instr_jalr & ~instr_retirq
         }
       }
     }
@@ -1217,7 +1217,7 @@ extends Module{
       dbg_rs1val_valid := true.B
     } .elsewhen( if(ENABLE_IRQ && ENABLE_IRQ_TIMER) {instr_timer} else {false.B}){
       latched_store := true.B
-      reg_out := timer;
+      reg_out := timer
       // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
       timer := cpuregs_rs1
       dbg_rs1val := cpuregs_rs1
@@ -1449,7 +1449,7 @@ extends Module{
 
   } .elsewhen( cpu_state_ld_rs1 === cpu_state ){
     when(is_lui_auipc_jal){
-      cpu_state := cpu_state_exec;          
+      cpu_state := cpu_state_exec
     } .elsewhen(is_lb_lh_lw_lbu_lhu & ~instr_trap){
       cpu_state := cpu_state_ldmem
     } .elsewhen( if(CATCH_ILLINSN) {instr_trap} else {false.B} ){
@@ -1497,10 +1497,10 @@ extends Module{
     when( if (TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) {(alu_wait | alu_wait_2)} else { false.B }){
     } .elsewhen(is_beq_bne_blt_bge_bltu_bgeu){
       when(mem_done){
-        cpu_state := cpu_state_fetch;          
+        cpu_state := cpu_state_fetch
       }
     } .otherwise{
-      cpu_state := cpu_state_fetch;        
+      cpu_state := cpu_state_fetch
     }
     
   } .elsewhen( cpu_state_stmem === cpu_state ){
@@ -1514,7 +1514,7 @@ extends Module{
   } .elsewhen( cpu_state_ldmem === cpu_state ){
     when(~mem_do_prefetch | mem_done){
       when(~mem_do_prefetch & mem_done){
-        cpu_state := cpu_state_fetch;          
+        cpu_state := cpu_state_fetch
       }
     }
   
