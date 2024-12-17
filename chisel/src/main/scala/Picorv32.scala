@@ -107,7 +107,6 @@ class Picorv32(
   BARREL_SHIFTER: Boolean = false,
   TWO_CYCLE_COMPARE: Boolean = true,
   TWO_CYCLE_ALU: Boolean = true,
-  COMPRESSED_ISA: Boolean = true,
   CATCH_MISALIGN: Boolean = true,
   CATCH_ILLINSN: Boolean = true,
   ENABLE_PCPI: Boolean = false,
@@ -369,269 +368,28 @@ extends Module{
   val mem_do_rdata = RegInit(false.B)
   val mem_do_wdata = RegInit(false.B)
 
-  val mem_xfer = Wire(Bool())
-
-  val mem_la_secondword = RegInit(false.B)
-
-  val mem_la_firstword =
-    if(COMPRESSED_ISA) {(mem_do_prefetch | mem_do_rinst) & next_pc.extract(1) & ~mem_la_secondword} else {false.B}
+  val mem_xfer = mem_valid & io.mem.ready
 
 
-  val last_mem_valid = RegNext(mem_valid & ~io.mem.ready, false.B)
-  val mem_la_firstword_reg = RegEnable(mem_la_firstword, false.B, ~last_mem_valid)
+  val mem_rdata_q = RegNext(io.mem.rdata)
 
-  val mem_la_firstword_xfer =
-    if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg)} else {false.B}
-
-
-
-
-
-  val prefetched_high_word = RegInit(false.B)
-  val clear_prefetched_high_word = Wire(Bool())
-
-  val mem_16bit_buffer = Reg(UInt(16.W))
-  val mem_rdata_q = Reg(UInt(32.W))
-
-  val mem_rdata_latched = Wire(UInt(32.W))
-
-  val mem_la_use_prefetched_high_word =
-    if(COMPRESSED_ISA) {mem_la_firstword & prefetched_high_word & ~clear_prefetched_high_word} else {false.B}
-
-  mem_xfer := (mem_valid & io.mem.ready) | (mem_la_use_prefetched_high_word & mem_do_rinst)
+  val mem_rdata_latched = (if( LATCHED_MEM_RDATA ){ io.mem.rdata } else { Mux(mem_xfer, io.mem.rdata, mem_rdata_q) })
 
   val mem_busy = mem_do_prefetch | mem_do_rinst | mem_do_rdata | mem_do_wdata
 
-  val mem_done = ~reset.asBool & ((mem_xfer & mem_state.orR & (mem_do_rinst | mem_do_rdata | mem_do_wdata)) | (mem_state.andR & mem_do_rinst)) &
-      (~mem_la_firstword | (~mem_rdata_latched(1,0).andR & mem_xfer))
+  val mem_done = ~reset.asBool & ((mem_xfer & mem_state.orR & (mem_do_rinst | mem_do_rdata | mem_do_wdata)) | (mem_state.andR & mem_do_rinst))
 
   io.mem_la.write := ~reset.asBool & (mem_state === 0.U) & mem_do_wdata
-  io.mem_la.read  := ~reset.asBool & ((~mem_la_use_prefetched_high_word & (mem_state === 0.U) & (mem_do_rinst | mem_do_prefetch | mem_do_rdata)) |
-      (if(COMPRESSED_ISA) {mem_xfer & Mux(~last_mem_valid, mem_la_firstword, mem_la_firstword_reg) & ~mem_la_secondword & mem_rdata_latched(1,0).andR} else {false.B}))
+  io.mem_la.read  := ~reset.asBool & (mem_state === 0.U) & (mem_do_rinst | mem_do_prefetch | mem_do_rdata)
 
-  io.mem_la.addr := Mux( mem_do_prefetch | mem_do_rinst, Cat(next_pc(31,2) + mem_la_firstword_xfer, 0.U(2.W)), Cat(reg_op1(31,2), 0.U(2.W)))
+  io.mem_la.addr := Mux( mem_do_prefetch | mem_do_rinst, Cat(next_pc(31,2), 0.U(2.W)), Cat(reg_op1(31,2), 0.U(2.W)))
 
-  val mem_rdata_latched_noshuffle =
-    (if( LATCHED_MEM_RDATA ){ io.mem.rdata } else { Mux(mem_xfer, io.mem.rdata, mem_rdata_q) })
-    
-  mem_rdata_latched := (
-    if( COMPRESSED_ISA ){
-      Mux(mem_la_use_prefetched_high_word, mem_16bit_buffer,
-        Mux(mem_la_secondword, Cat(mem_rdata_latched_noshuffle(15,0), mem_16bit_buffer),
-          Mux(mem_la_firstword, mem_rdata_latched_noshuffle(31,16), mem_rdata_latched_noshuffle)))
-    } else {
-      mem_rdata_latched_noshuffle
-    }    
-  )
+
+  val next_insn_opcode = RegEnable( io.mem.rdata, mem_xfer)
 
 
 
 
-
-  val next_insn_opcode = RegEnable( (if(COMPRESSED_ISA) {mem_rdata_latched} else {io.mem.rdata}), mem_xfer)
-
-
-
-
-  if (COMPRESSED_ISA){
-
-    when(mem_xfer){
-      mem_rdata_q := mem_rdata_latched
-    }
-    when(mem_done && (mem_do_prefetch | mem_do_rinst)){
-      when( mem_rdata_latched === BitPat("b????????_????????_000?????_??????00")){// C.ADDI4SPN
-        mem_rdata_q :=
-          Cat(
-            Cat(0.U(2.W), mem_rdata_latched(10,7), mem_rdata_latched(12,11), mem_rdata_latched.extract(5), mem_rdata_latched.extract(6), 0.U(2.W)), //31,20
-            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
-            "b000".U(3.W), //14,12
-             Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0) )
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_010?????_??????00") ){// C.LW
-        mem_rdata_q :=
-          Cat(
-            Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched(12,10), mem_rdata_latched.extract(6), 0.U(2.W)), //31,20
-            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
-            "b010".U(3.W), //14,12
-             Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0) )
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????00") ){// C.SW
-        mem_rdata_q :=
-          Cat(
-            Cat(0.U(5.W), mem_rdata_latched.extract(5), mem_rdata_latched.extract(12)), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15)),
-            "b010".U(3.W),//14,12
-            Cat(mem_rdata_latched(11,10), mem_rdata_latched.extract(6), 0.U(2.W)),//11,7
-             Mux( mem_xfer, mem_rdata_latched(6,0), mem_rdata_q(6,0) )
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_0?0?????_??????01") ){ // C.ADDI // C.LI
-        mem_rdata_q :=
-          Cat(
-            Cat( Fill( 7, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)), //31,20
-            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
-            "b000".U(3.W),//14,12
-            Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0)),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_011?????_??????01") ){
-        when( mem_rdata_latched(11,7) === 2.U ) { // C.ADDI16SP
-          mem_rdata_q :=
-            Cat(
-              Cat( Fill(3, mem_rdata_latched.extract(12)), mem_rdata_latched(4,3), mem_rdata_latched.extract(5), mem_rdata_latched.extract(2), mem_rdata_latched.extract(6), 0.U(4.W)), //31,20
-              Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15)),
-              "b000".U(3.W), //14,12
-              Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0))
-            )
-        } .otherwise{ // C.LUI
-          mem_rdata_q :=
-            Cat(
-              Cat( Fill( 15, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)),//31,12
-              Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0))
-            )
-        }
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?00??_??????01") ) { // C.SRLI
-        mem_rdata_q :=
-          Cat(
-            "b0000000".U(7.W), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15)),
-            "b101".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0)),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?01??_??????01") ) { // C.SRAI
-        mem_rdata_q :=
-          Cat(
-            "b0100000".U(7.W), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
-            "b101".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11,0), mem_rdata_q(11,0) )
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?10??_??????01") ) { // C.ANDI
-        mem_rdata_q :=
-          Cat(
-            Cat( Fill( 7, mem_rdata_latched.extract(12)), mem_rdata_latched(6,2)), //31,20
-            Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19,15) ),
-            "b111".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?00???01") ) { // C.SUB, 
-        mem_rdata_q := 
-          Cat(
-            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
-            "b000".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?01???01") ) { //C.XOR, 
-        mem_rdata_q := 
-          Cat(
-            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
-            "b100".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?10???01") ) { //C.OR, 
-        mem_rdata_q := 
-          Cat(
-            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24,15) ),
-            "b110".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) ),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100011??_?11???01") ) { //C.AND
-        mem_rdata_q := 
-          Cat(
-            Mux(mem_rdata_latched(6,5) === "b00".U, "b0100000".U(7.W), "b0000000".U(7.W)), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24,15)),
-            "b111".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0)),
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????01") ){// C.BEQZ
-        val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
-        mem_rdata_q := 
-          Cat(
-            Cat( temp.extract(11), temp(9,4) ), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24,15)),
-            "b000".U(3.W), //14,12
-            Cat( temp(3,0), temp.extract(10) ), //11,7
-            Mux( mem_xfer, mem_rdata_latched(6, 0), mem_rdata_q(6,0) )
-          )
-
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_111?????_??????01") ){// C.BNEZ
-        val temp = Cat( Fill(4, mem_rdata_latched.extract(12)), mem_rdata_latched.extract(12), mem_rdata_latched(6,5), mem_rdata_latched.extract(2), mem_rdata_latched(11,10), mem_rdata_latched(4,3) )
-        mem_rdata_q := 
-          Cat(
-            Cat( temp.extract(11), temp(9,4) ), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24,15) ),
-            "b001".U(3.W), //14,12
-            Cat( temp(3,0), temp.extract(10) ), //11,7
-            Mux( mem_xfer, mem_rdata_latched(6, 0), mem_rdata_q(6,0) )
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_000?????_??????10") ){// C.SLLI
-        mem_rdata_q := 
-          Cat(
-            "b0000000".U(7.W), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24, 15) ),
-            "b001".U(3.W), //14,12
-            Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0) )
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_010?????_??????10") ){// C.LWSP
-        mem_rdata_q := 
-          Cat(
-              Cat(0.U(4.W), mem_rdata_latched(3,2), mem_rdata_latched.extract(12), mem_rdata_latched(6,4), 0.U(2.W)), //31,20
-              Mux( mem_xfer, mem_rdata_latched(19,15), mem_rdata_q(19, 15)),
-              "b010".U(3.W),//14,12
-              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
-          )
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_100?????_??????10") ){
-        when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
-          mem_rdata_q := 
-            Cat(
-              0.U(12.W), //31,20
-              Mux( mem_xfer, mem_rdata_latched(19, 15), mem_rdata_q(19, 15)),
-              "b000".U(3.W),//14,12
-              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
-            )
-        }
-        when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
-          mem_rdata_q := 
-            Cat(
-              "b0000000".U(7.W), //31,25
-              Mux( mem_xfer, mem_rdata_latched(24,15), mem_rdata_q(24, 15)),
-              "b000".U(3.W),//14,12
-              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
-            )
-        }
-        when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
-          mem_rdata_q := 
-            Cat(
-              0.U(12.W), //31,20
-              Mux( mem_xfer, mem_rdata_latched(19, 15), mem_rdata_q(19, 15)),
-              "b000".U(3.W),//14,12
-              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
-            )
-        }
-        when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
-          mem_rdata_q := 
-            Cat(
-              "b0000000".U(7.W), //31,25
-              Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24, 15)),
-              "b000".U(3.W),//14,12
-              Mux( mem_xfer, mem_rdata_latched(11, 0), mem_rdata_q(11, 0))
-            )
-        }
-      } .elsewhen( mem_rdata_latched === BitPat("b????????_????????_110?????_??????10") ){ // C.SWSP
-        mem_rdata_q := 
-          Cat(
-            Cat(0.U(4.W), mem_rdata_latched(8,7), mem_rdata_latched.extract(12)), //31,25
-            Mux( mem_xfer, mem_rdata_latched(24, 15), mem_rdata_q(24, 15) ),
-            "b010".U(3.W),//14,12
-            Cat(mem_rdata_latched(11,9), 0.U(2.W)), //11,7
-            Mux( mem_xfer, mem_rdata_latched(6, 0), mem_rdata_q(6, 0))
-          )
-      }
-    }
-  } else {
-    mem_rdata_q := io.mem.rdata
-  }
 
 
 
@@ -659,8 +417,6 @@ extends Module{
       mem_valid := false.B
     }
 
-    mem_la_secondword := false.B
-    prefetched_high_word := false.B      
   } .otherwise{
     when( io.mem_la.read | io.mem_la.write) {
       mem_addr  := io.mem_la.addr
@@ -672,7 +428,7 @@ extends Module{
 
     when( mem_state === 0.U ){
       when(mem_do_prefetch | mem_do_rinst | mem_do_rdata){
-        mem_valid := ~mem_la_use_prefetched_high_word
+        mem_valid := true.B
         mem_instr := mem_do_prefetch | mem_do_rinst
         mem_wstrb := 0.U
         mem_state := 1.U
@@ -685,35 +441,11 @@ extends Module{
     } .elsewhen( mem_state === 1.U ){
       assert(mem_wstrb === 0.U)
       assert(mem_do_prefetch | mem_do_rinst | mem_do_rdata)
-      assert(mem_valid === ~mem_la_use_prefetched_high_word)
+      assert(mem_valid === true.B)
       assert(mem_instr === (mem_do_prefetch | mem_do_rinst))
       when(mem_xfer){
-        if (COMPRESSED_ISA) {
-          when(io.mem_la.read){
-            mem_valid := true.B
-            mem_la_secondword := true.B
-            when(~mem_la_use_prefetched_high_word){
-              mem_16bit_buffer := io.mem.rdata(31,16)
-            }
-          } .otherwise{
-            mem_valid := false.B
-            mem_la_secondword := false.B
-            when( ~mem_do_rdata ){
-              when(~io.mem.rdata(1,0).andR | mem_la_secondword){
-                mem_16bit_buffer := io.mem.rdata(31,16)
-                prefetched_high_word := true.B
-              } .otherwise{
-                prefetched_high_word := false.B
-              }            
-            }
-
-            mem_state := Mux(mem_do_rinst | mem_do_rdata, 0.U, 3.U)
-          } 
-        } else {
-          mem_valid := false.B
-          mem_la_secondword := false.B
-          mem_state := Mux(mem_do_rinst | mem_do_rdata, 0.U, 3.U)
-        }       
+        mem_valid := false.B
+        mem_state := Mux(mem_do_rinst | mem_do_rdata, 0.U, 3.U)
       }        
     } .elsewhen( mem_state === 2.U ){
         assert(mem_wstrb =/= 0.U)
@@ -729,10 +461,6 @@ extends Module{
         mem_state := 0.U
       }     
     }
-  }
-
-  when(clear_prefetched_high_word){
-    prefetched_high_word := false.B
   }
 
 
@@ -772,12 +500,6 @@ extends Module{
 
 
   // Instruction Decoder
-
-
-
-
-
-
 
   val instr_beq  = RegInit(false.B)
   val instr_bne  = RegInit(false.B)
@@ -848,7 +570,6 @@ extends Module{
   val decoder_trigger_q  = RegNext(decoder_trigger)
   val decoder_pseudo_trigger  = Reg(Bool())
   val decoder_pseudo_trigger_q  = RegNext(decoder_pseudo_trigger)
-  val compressed_instr = Reg(Bool())
 
   val is_lui_auipc_jal = RegNext(instr_lui | instr_auipc | instr_jal)
   val is_lb_lh_lw_lbu_lhu = Reg(Bool())
@@ -971,136 +692,6 @@ extends Module{
       }
     }
 
-
-    compressed_instr := 
-      (if (COMPRESSED_ISA){ mem_rdata_latched(1,0) =/= "b11".U } else { false.B })
-
-
-
-    if (COMPRESSED_ISA){
-      when(mem_rdata_latched(1,0) =/= "b11".U){
-        decoded_rd  := 0.U
-        decoded_rs1 := 0.U
-        decoded_rs2 := 0.U
-
-
-        {
-          val temp = Cat(Fill(20, mem_rdata_latched.extract(12)), mem_rdata_latched(12,2), 0.U(1.W) )
-          decoded_imm_j := Cat( temp(31,11), temp.extract(7), temp(9,8), temp.extract(5), temp.extract(6), temp.extract(1), temp.extract(10), temp(4,2),temp.extract(0))
-        }
-
-        when( mem_rdata_latched(1,0) === "b00".U){ // Quadrant 0
-          when(mem_rdata_latched(15,13) === "b000".U){ // C.ADDI4SPN
-            is_alu_reg_imm := mem_rdata_latched(12,5).orR
-            decoded_rs1 := 2.U
-            decoded_rd := 8.U + mem_rdata_latched(4,2)
-          } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LW
-            is_lb_lh_lw_lbu_lhu := 1.U
-            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
-            decoded_rd  := 8.U + mem_rdata_latched(4,2)
-          } .elsewhen(mem_rdata_latched(15,13) === "b110".U){ // C.SW
-            is_sb_sh_sw := 1.U
-            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
-            decoded_rs2 := 8.U + mem_rdata_latched(4,2)
-          }           
-        } .elsewhen( mem_rdata_latched(1,0) === "b01".U){ // Quadrant 1
-          when(mem_rdata_latched(15,13) === "b000".U){ // C.NOP / C.ADDI
-            is_alu_reg_imm := 1.U
-            decoded_rd  := mem_rdata_latched(11,7)
-            decoded_rs1 := mem_rdata_latched(11,7)
-          } .elsewhen( mem_rdata_latched(15,13) === "b001".U ){ // C.JAL
-            instr_jal  := 1.U
-            decoded_rd := 1.U
-          } .elsewhen( mem_rdata_latched(15,13) === "b010".U ){ // C.LI
-            is_alu_reg_imm := 1.U
-            decoded_rd  := mem_rdata_latched(11,7)
-            decoded_rs1 := 0.U
-          } .elsewhen( mem_rdata_latched(15,13) === "b011".U ){
-            when(mem_rdata_latched.extract(12) | mem_rdata_latched(6,2) =/= 0.U ){
-              when(mem_rdata_latched(11,7) === "b00010".U){ // C.ADDI16SP
-                is_alu_reg_imm := 1.U
-                decoded_rd     := mem_rdata_latched(11,7)
-                decoded_rs1    := mem_rdata_latched(11,7)
-              } .otherwise{ // C.LUI
-                instr_lui   := 1.U
-                decoded_rd  := mem_rdata_latched(11,7)
-                decoded_rs1 := 0.U
-              }                
-            }
-          } .elsewhen( mem_rdata_latched(15,13) === "b100".U ){
-            when( ~mem_rdata_latched.extract(11) & ~mem_rdata_latched.extract(12) ){ // C.SRLI, C.SRAI
-              is_alu_reg_imm := 1.U
-              decoded_rd  := 8.U + mem_rdata_latched(9,7)
-              decoded_rs1 := 8.U + mem_rdata_latched(9,7)
-              decoded_rs2 := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2))
-            }
-            when(mem_rdata_latched(11,10) === "b10".U){ // C.ANDI
-              is_alu_reg_imm := 1.U
-              decoded_rd     := 8.U + mem_rdata_latched(9,7)
-              decoded_rs1    := 8.U + mem_rdata_latched(9,7)
-            }
-            when(mem_rdata_latched(12,10) === "b011".U){ // C.SUB, C.XOR, C.OR, C.AND
-              is_alu_reg_reg := 1.U
-              decoded_rd     := 8.U + mem_rdata_latched(9,7)
-              decoded_rs1    := 8.U + mem_rdata_latched(9,7)
-              decoded_rs2    := 8.U + mem_rdata_latched(4,2)
-            }
-          } .elsewhen( mem_rdata_latched(15,13) === "b101".U ){ // C.J
-            instr_jal := 1.U
-          } .elsewhen( mem_rdata_latched(15,13) === "b110".U ){ // C.BEQZ
-            is_beq_bne_blt_bge_bltu_bgeu := 1.U
-            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
-            decoded_rs2 := 0.U
-          } .elsewhen( mem_rdata_latched(15,13) === "b111".U ){ // C.BNEZ
-            is_beq_bne_blt_bge_bltu_bgeu := 1.U
-            decoded_rs1 := 8.U + mem_rdata_latched(9,7)
-            decoded_rs2 := 0.U
-          }
-        } .elsewhen( mem_rdata_latched(1,0) === "b10".U){ // Quadrant 2
-          when(mem_rdata_latched(15,13) === "b000".U){ // C.SLLI
-            when( ~mem_rdata_latched.extract(12) ){
-              is_alu_reg_imm := 1.U
-              decoded_rd  := mem_rdata_latched(11,7)
-              decoded_rs1 := mem_rdata_latched(11,7)
-              decoded_rs2 := Cat(mem_rdata_latched.extract(12), mem_rdata_latched(6,2))
-            }            
-          } .elsewhen(mem_rdata_latched(15,13) === "b010".U){ // C.LWSP
-            when(mem_rdata_latched(11,7) =/= 0.U){
-              is_lb_lh_lw_lbu_lhu := 1.U
-              decoded_rd  := mem_rdata_latched(11,7)
-              decoded_rs1 := 2.U
-            }             
-          } .elsewhen(mem_rdata_latched(15,13) === "b100".U){
-            when( mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JR
-              instr_jalr  := 1.U
-              decoded_rd  := 0.U
-              decoded_rs1 := mem_rdata_latched(11,7)
-            }
-            when(mem_rdata_latched.extract(12) === 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.MV
-              is_alu_reg_reg := 1.U
-              decoded_rd  := mem_rdata_latched(11,7)
-              decoded_rs1 := 0.U
-              decoded_rs2 := mem_rdata_latched(6,2)
-            }
-            when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(11,7) =/= 0.U & mem_rdata_latched(6,2) === 0.U){ // C.JALR
-              instr_jalr  := 1.U
-              decoded_rd  := 1.U
-              decoded_rs1 := mem_rdata_latched(11,7)
-            }
-            when(mem_rdata_latched.extract(12) =/= 0.U & mem_rdata_latched(6,2) =/= 0.U){ // C.ADD
-              is_alu_reg_reg := 1.U
-              decoded_rd  := mem_rdata_latched(11,7)
-              decoded_rs1 := mem_rdata_latched(11,7)
-              decoded_rs2 := mem_rdata_latched(6,2)
-            }        
-          } .elsewhen(mem_rdata_latched(15,13) === "b110".U){// C.SWSP
-              is_sb_sh_sw := 1.U
-              decoded_rs1 := 2.U
-              decoded_rs2 := mem_rdata_latched(6,2)
-          }
-        }         
-      }
-    }   
   }
 
   when(decoder_trigger & ~decoder_pseudo_trigger){
@@ -1166,8 +757,7 @@ extends Module{
     }
 
     instr_ecall_ebreak := 
-      (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,21) === 0.U & mem_rdata_q(19,7) === 0.U) |
-      ( if(COMPRESSED_ISA) {mem_rdata_q(15,0) === "h9002".U} else {false.B})
+      (mem_rdata_q(6,0) === "b1110011".U & mem_rdata_q(31,21) === 0.U & mem_rdata_q(19,7) === 0.U)
 
     instr_fence := mem_rdata_q(6,0) === "b0001111".U & mem_rdata_q(14,12) === 0.U
 
@@ -1282,7 +872,6 @@ extends Module{
   val latched_store  = RegInit((if(STACKADDR != "hffffffff".U(32.W)){true.B}else{false.B}))
   val latched_stalu  = RegInit(false.B)
   val latched_branch = RegInit(false.B)
-  val latched_compr = Reg(Bool())
   val latched_trace = RegInit(false.B)
   val latched_is_lu = RegInit(false.B)
   val latched_is_lh = RegInit(false.B)
@@ -1360,16 +949,6 @@ extends Module{
   val alu_out_0_q = RegNext(alu_out_0)
 
 
-  val clear_prefetched_high_word_q = RegNext( clear_prefetched_high_word )
-
-
-	clear_prefetched_high_word :=
-    Mux( latched_branch | irq_state =/= 0.U | reset.asBool, ( if(COMPRESSED_ISA) { true.B } else {false.B}),
-      Mux( ~prefetched_high_word, false.B, clear_prefetched_high_word_q )
-    )
-
-
-
 
 
 
@@ -1381,10 +960,10 @@ extends Module{
 
   val cpuregs_wrdata =
     Mux1H(Seq(
-        ((cpu_state === cpu_state_fetch) & latched_branch                 ) -> (reg_pc + Mux(latched_compr, 2.U, 4.U)),
+        ((cpu_state === cpu_state_fetch) & latched_branch                 ) -> (reg_pc + 4.U),
         ((cpu_state === cpu_state_fetch) & latched_store & ~latched_branch) -> Mux(latched_stalu, alu_out_q, reg_out),
       ) ++ (if( ENABLE_IRQ ) { Seq(
-        ((cpu_state === cpu_state_fetch) & irq_state.extract(0)) -> (reg_next_pc | latched_compr),
+        ((cpu_state === cpu_state_fetch) & irq_state.extract(0)) -> (reg_next_pc),
         ((cpu_state === cpu_state_fetch) & irq_state.extract(1)) -> (irq_pending & ~irq_mask),        
       )} else { Seq() })
     )
@@ -1538,7 +1117,7 @@ extends Module{
     if (CATCH_MISALIGN){
       when( ( ~irq_mask.extract(irq_buserror) & ~irq_active ) & (
         (( mem_do_rdata | mem_do_wdata ) & ( ( mem_wordsize === 0.U & reg_op1(1,0) =/= 0.U ) | ( mem_wordsize === 1.U & reg_op1.extract(0) =/= 0.U ) )) |
-        (  mem_do_rinst                  & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc(1,0) =/= 0.U} )                                      )
+        (  mem_do_rinst                  & ( reg_pc(1,0) =/= 0.U )                                      )
       ) ){
         busError_irq_pending := (1.U << irq_buserror)
       } .otherwise{
@@ -1605,7 +1184,7 @@ extends Module{
       )
 
     when(latched_branch){
-      // printf( "ST_RD:  %d 0x%x, BRANCH 0x%x\n", latched_rd, reg_pc + Mux(latched_compr, 2.U, 4.U), current_pc)
+      // printf( "ST_RD:  %d 0x%x, BRANCH 0x%x\n", latched_rd, reg_pc + 4.U, current_pc)
     } .elsewhen(latched_store & ~latched_branch){
       // printf( "ST_RD:  %d 0x%x\n", latched_rd, Mux(latched_stalu, alu_out_q, reg_out))
     }
@@ -1646,7 +1225,6 @@ extends Module{
     latched_is_lb  := false.B
 
     latched_rd := decoded_rd
-    latched_compr := compressed_instr
 
 
 
@@ -1655,7 +1233,6 @@ extends Module{
     if (ENABLE_IRQ){
       when((decoder_trigger & ~irq_active & ~irq_delay & ((irq_pending & ~irq_mask).orR)) | irq_state =/= 0.U ){
         irq_state := Mux(irq_state === "b00".U, "b01".U, Mux(irq_state === "b01".U, "b10".U, "b00".U))
-        latched_compr := latched_compr
         if (ENABLE_IRQ_QREGS){
           latched_rd := irqregs_offset | irq_state.extract(0)
         } else{
@@ -1665,7 +1242,7 @@ extends Module{
         when(irq_pending =/= 0.U){
           latched_store := true.B
           reg_out := irq_pending
-          reg_next_pc := current_pc + Mux(compressed_instr, 2.U, 4.U)
+          reg_next_pc := current_pc + 4.U
           mem_do_rinst := true.B
         } .otherwise{
           do_waitirq := true.B
@@ -1673,7 +1250,7 @@ extends Module{
       } .elsewhen(decoder_trigger){
         // printf(s"-- %-0t", $time)
         irq_delay := irq_active
-        reg_next_pc := current_pc + Mux(compressed_instr, 2.U, 4.U)
+        reg_next_pc := current_pc + 4.U
         if (ENABLE_TRACE){
           latched_trace := true.B
         }
@@ -1694,7 +1271,7 @@ extends Module{
       when(decoder_trigger){
         // printf(s"-- %-0t", $time)
         irq_delay := irq_active
-        reg_next_pc := current_pc + Mux(compressed_instr, 2.U, 4.U)
+        reg_next_pc := current_pc + 4.U
         if (ENABLE_TRACE){
           latched_trace := true.B
         }
@@ -2052,7 +1629,7 @@ extends Module{
         printf( "MISALIGNED HALFWORD: 0x%x\n", reg_op1)
       }
     }
-    when( mem_do_rinst & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else { reg_pc(1,0) =/= 0.U} )){
+    when( mem_do_rinst & ( reg_pc(1,0) =/= 0.U )){
       printf( "MISALIGNED INSTRUCTION: 0x%x\n", reg_pc)
     }
   }
@@ -2064,7 +1641,7 @@ extends Module{
           cpu_state := cpu_state_trap            
         }
       }
-      when( mem_do_rinst & ( if(COMPRESSED_ISA) {reg_pc.extract(0)} else {reg_pc(1,0) =/= 0.U}) ){
+      when( mem_do_rinst & ( reg_pc(1,0) =/= 0.U ) ){
         cpu_state := cpu_state_trap
       }        
     }
@@ -2101,13 +1678,8 @@ extends Module{
 
 
   if (!CATCH_MISALIGN){
-    if (COMPRESSED_ISA){
-      reg_pc(0) := 0.U
-      reg_next_pc(0) := 0.U    
-    } else{
-      reg_pc(1,0) := 0.U
-      reg_next_pc(1,0) := 0.U
-    }
+    reg_pc(1,0) := 0.U
+    reg_next_pc(1,0) := 0.U
   }
 
 

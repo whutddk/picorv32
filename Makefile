@@ -16,7 +16,6 @@ FIRMWARE_OBJS = firmware/start.o firmware/irq.o firmware/print.o firmware/hello.
 GCC_WARNS  = -Werror -Wall -Wextra -Wshadow -Wundef -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings
 GCC_WARNS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes -pedantic # -Wconversion
 TOOLCHAIN_PREFIX = riscv64-unknown-elf-
-COMPRESSED_ISA = C
 
 # Add things like "export http_proxy=... https_proxy=..." here
 GIT_ENV = true
@@ -55,23 +54,23 @@ test_verilator: testbench_verilator firmware/firmware.hex
 	./testbench_verilator
 
 testbench.vvp: testbench.v picorv32.v
-	$(IVERILOG) -o $@ $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) $^
+	$(IVERILOG) -o $@  $^
 	chmod -x $@
 
 testbench_rvf.vvp: testbench.v picorv32.v rvfimon.v
-	$(IVERILOG) -o $@ -D RISCV_FORMAL $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) $^
+	$(IVERILOG) -o $@ -D RISCV_FORMAL  $^
 	chmod -x $@
 
 testbench_wb.vvp: testbench_wb.v picorv32.v
-	$(IVERILOG) -o $@ $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) $^
+	$(IVERILOG) -o $@  $^
 	chmod -x $@
 
 testbench_ez.vvp: testbench_ez.v picorv32.v
-	$(IVERILOG) -o $@ $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) $^
+	$(IVERILOG) -o $@  $^
 	chmod -x $@
 
 testbench_sp.vvp: testbench.v picorv32.v
-	$(IVERILOG) -o $@ $(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) -DSP_TEST $^
+	$(IVERILOG) -o $@  -DSP_TEST $^
 	chmod -x $@
 
 testbench_synth.vvp: testbench.v synth.v
@@ -79,8 +78,7 @@ testbench_synth.vvp: testbench.v synth.v
 	chmod -x $@
 
 testbench_verilator: testbench.v picorv32.v testbench.cc
-	$(VERILATOR) --cc --exe -Wno-lint -trace --top-module picorv32_wrapper testbench.v picorv32.v testbench.cc \
-			$(subst C,-DCOMPRESSED_ISA,$(COMPRESSED_ISA)) --Mdir testbench_verilator_dir
+	$(VERILATOR) --cc --exe -Wno-lint -trace --top-module picorv32_wrapper testbench.v picorv32.v testbench.cc  --Mdir testbench_verilator_dir
 	$(MAKE) -C testbench_verilator_dir -f Vpicorv32_wrapper.mk
 	cp testbench_verilator_dir/Vpicorv32_wrapper testbench_verilator
 
@@ -107,17 +105,17 @@ firmware/firmware.bin: firmware/firmware.elf
 	chmod -x $@
 
 firmware/firmware.elf: $(FIRMWARE_OBJS) $(TEST_OBJS) firmware/sections.lds
-	$(TOOLCHAIN_PREFIX)gcc -Os -mabi=ilp32 -march=rv32im$(subst C,c,$(COMPRESSED_ISA)) -ffreestanding -nostdlib -o $@ \
+	$(TOOLCHAIN_PREFIX)gcc -Os -mabi=ilp32 -march=rv32im -ffreestanding -nostdlib -o $@ \
 		-Wl,--build-id=none,-Bstatic,-T,firmware/sections.lds,-Map,firmware/firmware.map,--strip-debug \
 		$(FIRMWARE_OBJS) $(TEST_OBJS) -lgcc
 	riscv64-unknown-elf-objdump --disassemble-all --disassemble-zeroes  firmware/firmware.elf > firmware/firmware.dump
 	chmod -x $@
 
 firmware/start.o: firmware/start.S
-	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32im$(subst C,c,$(COMPRESSED_ISA)) -o $@ $<
+	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32im -o $@ $<
 
 firmware/%.o: firmware/%.c
-	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32i$(subst C,c,$(COMPRESSED_ISA)) -Os --std=c99 $(GCC_WARNS) -ffreestanding -nostdlib -o $@ $<
+	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32i -Os --std=c99 $(GCC_WARNS) -ffreestanding -nostdlib -o $@ $<
 
 tests/%.o: tests/%.S tests/riscv_test.h tests/test_macros.h
 	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32im -o $@ -DTEST_FUNC_NAME=$(notdir $(basename $<)) \
