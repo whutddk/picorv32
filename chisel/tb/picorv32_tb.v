@@ -76,15 +76,6 @@ module picorv32_tb (
         .io_mem_la_addr(),
         .io_mem_la_wdata(),
         .io_mem_la_wstrb(),
-        .io_pcpi_valid(),
-
-        .io_pcpi_ready(1'b1),
-        .io_pcpi_insn(),
-        .io_pcpi_rs1(),
-        .io_pcpi_rs2(),
-        .io_pcpi_wr(1'b0),
-        .io_pcpi_rd(32'd0),
-        .io_pcpi_waiting(1'b1),
 
         .io_irq(irq),
         .io_eoi(),

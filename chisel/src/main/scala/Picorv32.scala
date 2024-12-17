@@ -48,19 +48,6 @@ class Memory_LookAHead_Bundle extends Bundle{
   val wstrb = UInt(4.W)
 }
 
-class PCPI_Access_Bundle extends Bundle{
-  // Pico Co-Processor Interface (PCPI)
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  
-  val insn  = Output(UInt(32.W))
-  val rs1   = Output(UInt(32.W))
-  val rs2   = Output(UInt(32.W))
-  val wr    = Input(Bool())
-  val rd    = Input((UInt(32.W)))
-  val waiting  = Input(Bool())
-}
-
 
 class Riscv_Format_Bundle extends Bundle{
   val valid = Bool()
@@ -126,7 +113,6 @@ extends Module{
   val trap = Output(Bool())
   val mem  = new Memory_Access_Bundle
   val mem_la = Output(new Memory_LookAHead_Bundle)
-  val pcpi = new PCPI_Access_Bundle 
 
   val irq = Input(UInt(32.W))
   val eoi = Output(UInt(32.W))
@@ -151,8 +137,7 @@ extends Module{
 
 
 
-  val pcpi_valid = RegInit(false.B); io.pcpi.valid := pcpi_valid
-  val pcpi_insn = Reg(UInt(32.W)); io.pcpi.insn := pcpi_insn
+
 
   val eoi = RegInit(0.U(32.W)); io.eoi := eoi
 
@@ -169,9 +154,6 @@ extends Module{
   def regfile_size   = if(ENABLE_REGS_16_31) { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) {36} else {32} } else { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) {20} else {16} }
   def regindex_bits  = if(ENABLE_REGS_16_31) { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) { 6} else { 5} } else { if(ENABLE_IRQ & ENABLE_IRQ_QREGS) { 5} else { 4} }
 
-
-
-  def WITH_PCPI = false
 
   def TRACE_BRANCH = Cat( "b0001".U(4.W), 0.U(32.W) )
   def TRACE_ADDR   = Cat( "b0010".U(4.W), 0.U(32.W) )
@@ -203,8 +185,7 @@ extends Module{
   val dbg_mem_wstrb = mem_wstrb
   val dbg_mem_rdata = io.mem.rdata
 
-  io.pcpi.rs1 := reg_op1
-  io.pcpi.rs2 := reg_op2
+
 
   val next_pc = Wire(UInt(32.W))
 
@@ -214,47 +195,6 @@ extends Module{
 
   val irq_pending = RegInit(0.U(32.W))
   val timer = RegInit(0.U(32.W))
-
-
-  // Internal PCPI Cores
-  val pcpi_mul_wr    = Wire(Bool())
-  val pcpi_mul_rd    = Wire(UInt(32.W))
-  val pcpi_mul_waiting  = Wire(Bool())
-  val pcpi_mul_ready = Wire(Bool())
-
-  val pcpi_div_wr    = Wire(Bool())
-  val pcpi_div_rd    = Wire(UInt(32.W))
-  val pcpi_div_waiting  = Wire(Bool())
-  val pcpi_div_ready = Wire(Bool())
-
-
-
-  {
-    pcpi_mul_wr    := false.B
-    pcpi_mul_rd    := 0.U
-    pcpi_mul_waiting  := false.B
-    pcpi_mul_ready := false.B
-  }
-
-
-  {
-    pcpi_div_wr    := false.B
-    pcpi_div_rd    := 0.U
-    pcpi_div_waiting  := false.B
-    pcpi_div_ready := false.B
-  }
-
-
-  val pcpi_int_wr = false.B
-
-  val pcpi_int_rd =
-    Mux1H(Seq( false.B -> 0.U )
-    )
-
-  val pcpi_int_waiting  = false.B
-
-  val pcpi_int_ready = false.B
-
 
 
 
@@ -539,7 +479,7 @@ extends Module{
   val is_compare = RegNext( Mux( decoder_trigger & ~decoder_pseudo_trigger, false.B, is_beq_bne_blt_bge_bltu_bgeu | instr_slti | instr_slt | instr_sltiu | instr_sltu) , false.B)
 
   val instr_trap =
-    if( CATCH_ILLINSN || WITH_PCPI ){
+    if( CATCH_ILLINSN ){
       ~(
         instr_lui | instr_auipc | instr_jal | instr_jalr |
         instr_beq | instr_bne | instr_blt | instr_bge | instr_bltu | instr_bgeu |
@@ -643,7 +583,6 @@ extends Module{
   }
 
   when(decoder_trigger & ~decoder_pseudo_trigger){
-    pcpi_insn := (if(WITH_PCPI) {mem_rdata_q} else {0.U})
 
     instr_beq   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b000".U
     instr_bne   := is_beq_bne_blt_bge_bltu_bgeu & mem_rdata_q(14,12) === "b001".U
@@ -829,8 +768,7 @@ extends Module{
 
   next_pc := Mux(latched_store & latched_branch, reg_out & "hfffffffe".U, reg_next_pc)
 
-  val pcpi_timeout_counter = RegInit("hF".U(4.W))
-  val pcpi_timeout = RegInit(false.B)
+
 
   val do_waitirq = Reg(Bool())
 
@@ -995,16 +933,7 @@ extends Module{
     dbg_rs2val_valid := false.B
   }
 
-  if (WITH_PCPI & CATCH_ILLINSN){
-    when(pcpi_valid & ~pcpi_int_waiting){
-      when(pcpi_timeout_counter =/= 0.U){
-        pcpi_timeout_counter := pcpi_timeout_counter - 1.U          
-      }
-    } .otherwise{
-      pcpi_timeout_counter := "hF".U
-    }
-    pcpi_timeout := pcpi_timeout_counter === 0.U
-  }
+
 
 
 
@@ -1040,18 +969,9 @@ extends Module{
         (irq_pending & LATCHED_IRQ) & (
           Mux( (cpu_state_fetch  === cpu_state & irq_state.extract(1)), irq_mask, "hFFFFFFFF".U(32.W))
         ) |
-          Mux( if( WITH_PCPI & CATCH_ILLINSN ) {(cpu_state_ld_rs2 === cpu_state & instr_trap & ~pcpi_int_ready & (pcpi_timeout | instr_ecall_ebreak) & ~irq_mask.extract(irq_ebreak) & ~irq_active)} else {false.B}, 1.U << irq_ebreak, 0.U ) |
           Mux(
             if (CATCH_ILLINSN){
-              if (WITH_PCPI ) {
-                if(ENABLE_REGS_DUALPORT){
-                  ( cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active) & (pcpi_timeout || instr_ecall_ebreak) & ~(pcpi_int_ready)
-                } else {
-                  false.B
-                }
-              } else {
                 ( cpu_state_ld_rs1 === cpu_state & instr_trap & ~irq_mask.extract(irq_ebreak) & ~irq_active)
-              }
             } else {
               false.B
             },
@@ -1261,48 +1181,13 @@ extends Module{
       dbg_rs1val_valid := true.B
       cpu_state := cpu_state_ldmem
       mem_do_rinst := true.B
-    } .elsewhen( if(CATCH_ILLINSN || WITH_PCPI) {instr_trap} else {false.B} ){
-      if (WITH_PCPI){
-        // printf( "LD_RS1: %d 0x%x\n", decoded_rs1, cpuregs_rs1)
-        reg_op1    := cpuregs_rs1
-        dbg_rs1val := cpuregs_rs1
-        dbg_rs1val_valid := true.B
-        if (ENABLE_REGS_DUALPORT){
-          pcpi_valid := true.B
-          // printf( "LD_RS2: %d 0x%x\n", decoded_rs2, cpuregs_rs2)
-          reg_sh  := cpuregs_rs2
-          reg_op2 := cpuregs_rs2
-          dbg_rs2val := cpuregs_rs2
-          dbg_rs2val_valid := true.B
-          when(pcpi_int_ready){
-            mem_do_rinst  := true.B
-            pcpi_valid := false.B
-            reg_out := pcpi_int_rd
-            latched_store := pcpi_int_wr
-            cpu_state     := cpu_state_fetch
-          } .elsewhen(if (CATCH_ILLINSN) {pcpi_timeout | instr_ecall_ebreak} else {false.B}) {
-            pcpi_valid := false.B 
-            printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
-            when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
-              cpu_state := cpu_state_fetch
-            } .otherwise{
-              cpu_state := cpu_state_trap
-            }
-          }
-        } else {
-          cpu_state := cpu_state_ld_rs2
-        }
-      } else {
-        printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
-        when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
-          cpu_state := cpu_state_fetch
-        } .otherwise{
-          cpu_state := cpu_state_trap
-        }
+    } .elsewhen( if(CATCH_ILLINSN) {instr_trap} else {false.B} ){
+      printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
+      when(if (ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
+        cpu_state := cpu_state_fetch
+      } .otherwise{
+        cpu_state := cpu_state_trap
       }
-
-
-
     } .elsewhen( if(ENABLE_COUNTERS) {is_rdcycle_rdcycleh_rdinstr_rdinstrh} else {false.B}){
       when(instr_rdcycle){
         reg_out := count_cycle(31,0)
@@ -1408,24 +1293,7 @@ extends Module{
     dbg_rs2val := cpuregs_rs2
     dbg_rs2val_valid := true.B
 
-    when( if(WITH_PCPI) {instr_trap} else {false.B} ){
-      pcpi_valid := true.B
-      when(pcpi_int_ready){
-        mem_do_rinst := true.B
-        pcpi_valid := false.B
-        reg_out := pcpi_int_rd
-        latched_store := pcpi_int_wr
-        cpu_state := cpu_state_fetch
-      } .elsewhen( if(CATCH_ILLINSN){pcpi_timeout | instr_ecall_ebreak} else {false.B}){
-        pcpi_valid := false.B
-        printf( "EBREAK OR UNSUPPORTED INSN AT 0x%x\n", reg_pc)
-        when( if(ENABLE_IRQ) {~irq_mask.extract(irq_ebreak) & ~irq_active} else {false.B}){
-          cpu_state := cpu_state_fetch
-        } .otherwise{
-          cpu_state := cpu_state_trap
-        }
-      }
-    } .elsewhen(is_sb_sh_sw){
+    when(is_sb_sh_sw){
       cpu_state := cpu_state_stmem
       mem_do_rinst := true.B
     } .otherwise{
