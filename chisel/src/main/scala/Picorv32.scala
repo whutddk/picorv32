@@ -103,7 +103,7 @@ class Picorv32(
   STACKADDR: UInt = "hffffffff".U(32.W),
 )
 extends Module{
-  def RISCV_FORMAL = true
+  def RISCV_FORMAL = false
   println("Warning! Mis-align in instr-fetch or memory-access will only throw assert failure in Simulation, and may cause error in physical system!\n")
 
 

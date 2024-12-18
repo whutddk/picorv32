@@ -31,3 +31,6 @@ clean:
 vcd:
 	gtkwave ./tb/build/wave.vcd &
 
+yosys:
+	yosys ./generated/Picorv32.v ./tb/yosys/area.ys
+
